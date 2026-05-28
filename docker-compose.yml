@@ -1,0 +1,179 @@
+version: "3.8"
+
+name: velox-infra
+
+x-redis-common: &redis-common
+  image: redis:7.0-alpine
+  command:
+    - redis-server
+    - --cluster-enabled
+    - "yes"
+    - --cluster-config-file
+    - nodes.conf
+    - --cluster-node-timeout
+    - "5000"
+    - --appendonly
+    - "yes"
+  networks:
+    - velox-network
+  healthcheck:
+    test: ["CMD", "redis-cli", "ping"]
+    interval: 5s
+    timeout: 3s
+    retries: 20
+
+services:
+  # ─────────────────────────────────────────
+  # Redis Cluster: 3 masters + 3 replicas
+  # ─────────────────────────────────────────
+  redis-1:
+    <<: *redis-common
+    container_name: velox-redis-1
+    ports:
+      - "6371:6379"
+
+  redis-2:
+    <<: *redis-common
+    container_name: velox-redis-2
+    ports:
+      - "6372:6379"
+
+  redis-3:
+    <<: *redis-common
+    container_name: velox-redis-3
+    ports:
+      - "6373:6379"
+
+  redis-4:
+    <<: *redis-common
+    container_name: velox-redis-4
+    ports:
+      - "6374:6379"
+
+  redis-5:
+    <<: *redis-common
+    container_name: velox-redis-5
+    ports:
+      - "6375:6379"
+
+  redis-6:
+    <<: *redis-common
+    container_name: velox-redis-6
+    ports:
+      - "6376:6379"
+
+  redis-cluster-init:
+    image: redis:7.0-alpine
+    container_name: velox-redis-init
+    depends_on:
+      redis-1:
+        condition: service_healthy
+      redis-2:
+        condition: service_healthy
+      redis-3:
+        condition: service_healthy
+      redis-4:
+        condition: service_healthy
+      redis-5:
+        condition: service_healthy
+      redis-6:
+        condition: service_healthy
+    command:
+      - sh
+      - -c
+      - >
+        echo 'yes' | redis-cli --cluster create
+        redis-1:6379 redis-2:6379 redis-3:6379
+        redis-4:6379 redis-5:6379 redis-6:6379
+        --cluster-replicas 1
+    networks:
+      - velox-network
+    restart: "no"
+
+  # ─────────────────────────────────────────
+  # Etcd
+  # ─────────────────────────────────────────
+  etcd:
+    image: gcr.io/etcd-development/etcd:v3.5.18
+    container_name: velox-etcd
+    ports:
+      - "2379:2379"
+      - "2380:2380"
+    environment:
+      ETCD_NAME: etcd0
+      ETCD_DATA_DIR: /etcd-data
+
+      ETCD_LISTEN_CLIENT_URLS: http://0.0.0.0:2379
+      ETCD_ADVERTISE_CLIENT_URLS: http://127.0.0.1:2379
+
+      ETCD_LISTEN_PEER_URLS: http://0.0.0.0:2380
+      ETCD_INITIAL_ADVERTISE_PEER_URLS: http://127.0.0.1:2380
+
+      ETCD_INITIAL_CLUSTER: etcd0=http://127.0.0.1:2380
+      ETCD_INITIAL_CLUSTER_TOKEN: etcd-cluster-token
+      ETCD_INITIAL_CLUSTER_STATE: new
+    volumes:
+      - etcd-data:/etcd-data
+    networks:
+      - velox-network
+
+  # ─────────────────────────────────────────
+  # Jaeger
+  # ─────────────────────────────────────────
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    container_name: velox-jaeger
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+    ports:
+      - "16686:16686"
+      - "4317:4317"
+      - "4318:4318"
+    networks:
+      - velox-network
+
+  # ─────────────────────────────────────────
+  # Prometheus
+  # ─────────────────────────────────────────
+  prometheus:
+    image: prom/prometheus:v2.51.0
+    container_name: velox-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=7d
+    networks:
+      - velox-network
+
+  # ─────────────────────────────────────────
+  # Grafana
+  # ─────────────────────────────────────────
+  grafana:
+    image: grafana/grafana:10.4.0
+    container_name: velox-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./infra/grafana/provisioning:/etc/grafana/provisioning:ro
+    depends_on:
+      - prometheus
+    networks:
+      - velox-network
+
+networks:
+  velox-network:
+    driver: bridge
+
+volumes:
+  etcd-data:
+  prometheus-data:
+  grafana-data:
