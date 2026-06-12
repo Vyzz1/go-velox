@@ -8,6 +8,8 @@ vendor/
 # Env files
 .env
 .env.local
+cmd/**/.env
+cmd/**/.env.local
 
 # IDE
 .idea/

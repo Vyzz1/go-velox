@@ -1,6 +1,6 @@
 SHELL := /usr/bin/env bash
 
-.PHONY: help fmt test lint tidy check proto compose-config compose-up compose-down compose-logs compose-ps compose-restart run-api-gateway run-limiter-engine run-config-service run-sync-agent dev
+.PHONY: help fmt test lint tidy check proto compose-config compose-up compose-down compose-logs compose-ps compose-restart infra-dev infra-stack run-api-gateway run-limiter-engine run-config-service run-sync-agent dev evans
 
 GO ?= go
 GOFMT ?= gofmt
@@ -21,12 +21,14 @@ help:
 	@echo "  make check               Run fmt, lint, and test"
 	@echo "  make proto               Generate gRPC/protobuf code if proto files exist"
 	@echo "  make compose-config      Validate docker compose config"
-	@echo "  make compose-up          Start local infra in background"
-	@echo "  make compose-down        Stop local infra"
+	@echo "  make infra-dev           Start infra + standalone Redis (Go services run on host)"
+	@echo "  make infra-stack         Start full stack in Docker (Redis Cluster + all services)"
+	@echo "  make compose-up          Start local infra in background (no profile)"
+	@echo "  make compose-down        Stop all compose services"
 	@echo "  make compose-logs        Tail docker compose logs"
 	@echo "  make compose-ps          Show docker compose services"
 	@echo "  make compose-restart     Restart local infra"
-	@echo "  make dev                 Start infra and run all available app services"
+	@echo "  make dev                 Start infra-dev and run all available app services on host"
 	@echo "  make run-api-gateway     Run cmd/api-gateway if present"
 	@echo "  make run-limiter-engine  Run cmd/limiter-engine if present"
 	@echo "  make run-config-service  Run cmd/config-service if present"
@@ -75,7 +77,10 @@ proto:
 		echo "protoc not installed; skipping code generation."; \
 		exit 0; \
 	fi
-	@$(PROTOC) -I proto --go_out=. --go-grpc_out=. $$(find proto -type f -name '*.proto')
+	@$(PROTOC) -I proto \
+		--go_out=. --go_opt=module=github.com/Vyzz1/go-velox.git \
+		--go-grpc_out=. --go-grpc_opt=module=github.com/Vyzz1/go-velox.git \
+		$$(find proto -type f -name '*.proto' ! -path 'proto/gen/*')
 
 compose-config:
 	$(DOCKER_COMPOSE) -f $(COMPOSE_FILE) config
@@ -84,7 +89,7 @@ compose-up:
 	$(DOCKER_COMPOSE) -f $(COMPOSE_FILE) up -d
 
 compose-down:
-	$(DOCKER_COMPOSE) -f $(COMPOSE_FILE) down
+	$(DOCKER_COMPOSE) -f $(COMPOSE_FILE) down --remove-orphans
 
 compose-logs:
 	$(DOCKER_COMPOSE) -f $(COMPOSE_FILE) logs -f
@@ -94,7 +99,15 @@ compose-ps:
 
 compose-restart: compose-down compose-up
 
-dev: compose-up
+# infra-dev: standalone Redis + observability stack — Go services run on host
+infra-dev:
+	$(DOCKER_COMPOSE) -f $(COMPOSE_FILE) --profile dev up -d
+
+# infra-stack: Redis Cluster + all services in Docker
+infra-stack:
+	$(DOCKER_COMPOSE) -f $(COMPOSE_FILE) --profile stack up -d --build
+
+dev: infra-dev
 	@mkdir -p $(DEV_LOG_DIR)
 	@for svc in api-gateway limiter-engine config-service sync-agent; do \
 		main="cmd/$$svc/main.go"; \
@@ -107,6 +120,14 @@ dev: compose-up
 			echo "Skipping $$svc: $$main not found."; \
 		fi; \
 	done
+
+# evans: interactive gRPC REPL — requires evans installed (go install github.com/ktr0731/evans@latest)
+# Install once: go install github.com/ktr0731/evans@latest
+EVANS_HOST ?= localhost
+EVANS_PORT ?= 9090
+
+evans:
+	evans --host $(EVANS_HOST) --port $(EVANS_PORT) --reflection repl
 
 run-api-gateway:
 	@if [ ! -f cmd/api-gateway/main.go ]; then \

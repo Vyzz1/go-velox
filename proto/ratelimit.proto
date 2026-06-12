@@ -1,0 +1,34 @@
+syntax = "proto3";
+
+package velox.ratelimit.v1;
+
+option go_package = "github.com/Vyzz1/go-velox.git/proto/gen/ratelimit/v1;ratelimitv1";
+
+message RateLimitCheckRequest {
+  string tenant_id = 1;
+  string subject = 2;
+  string resource = 3;
+  string action = 4;
+  uint32 cost = 5;
+  map<string, string> metadata = 6;
+}
+
+message RateLimitCheckResponse {
+  bool allowed = 1;
+  uint64 remaining = 2;
+  int64 reset_at_unix_ms = 3;
+  int64 retry_after_ms = 4;
+  string decision_id = 5;
+  string reason = 6;
+}
+
+message RateLimitHealthRequest {}
+
+message RateLimitHealthResponse {
+  string status = 1;
+}
+
+service RateLimitService {
+  rpc Check(RateLimitCheckRequest) returns (RateLimitCheckResponse);
+  rpc Health(RateLimitHealthRequest) returns (RateLimitHealthResponse);
+}

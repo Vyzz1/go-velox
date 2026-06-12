@@ -1,0 +1,38 @@
+2026-06-11T15:32:55.384+0700	INFO	limiter-engine/main.go:48	starting limiter-engine	{"service": "limiter-engine", "env": "development", "grpc": ":9090", "metrics": ":9091", "otlp": "localhost:4317"}
+2026-06-11T15:32:55.386+0700	INFO	metrics/metrics.go:33	metrics server listening	{"addr": ":9091"}
+redis: 2026/06/11 15:32:55 pool.go:715: redis: connection pool: failed to dial after 5 attempts: dial tcp [::1]:6375: connectex: No connection could be made because the target machine actively refused it.
+redis: 2026/06/11 15:32:55 pool.go:715: redis: connection pool: failed to dial after 5 attempts: dial tcp [::1]:6375: connectex: No connection could be made because the target machine actively refused it.
+redis: 2026/06/11 15:32:55 pool.go:715: redis: connection pool: failed to dial after 5 attempts: dial tcp [::1]:6375: connectex: No connection could be made because the target machine actively refused it.
+redis: 2026/06/11 15:32:55 pool.go:715: redis: connection pool: failed to dial after 5 attempts: dial tcp [::1]:6375: connectex: No connection could be made because the target machine actively refused it.
+redis: 2026/06/11 15:32:55 pool.go:715: redis: connection pool: failed to dial after 5 attempts: dial tcp [::1]:6375: connectex: No connection could be made because the target machine actively refused it.
+redis: 2026/06/11 15:32:56 pool.go:715: redis: connection pool: failed to dial after 5 attempts: dial tcp [::1]:6374: connectex: No connection could be made because the target machine actively refused it.
+redis: 2026/06/11 15:32:56 pool.go:715: redis: connection pool: failed to dial after 5 attempts: dial tcp [::1]:6374: connectex: No connection could be made because the target machine actively refused it.
+redis: 2026/06/11 15:32:56 pool.go:715: redis: connection pool: failed to dial after 5 attempts: dial tcp [::1]:6374: connectex: No connection could be made because the target machine actively refused it.
+redis: 2026/06/11 15:32:56 pool.go:715: redis: connection pool: failed to dial after 5 attempts: dial tcp [::1]:6374: connectex: No connection could be made because the target machine actively refused it.
+redis: 2026/06/11 15:32:56 pool.go:715: redis: connection pool: failed to dial after 5 attempts: dial tcp [::1]:6374: connectex: No connection could be made because the target machine actively refused it.
+redis: 2026/06/11 15:32:56 pool.go:715: redis: connection pool: failed to dial after 5 attempts: dial tcp [::1]:6373: connectex: No connection could be made because the target machine actively refused it.
+redis: 2026/06/11 15:32:56 pool.go:715: redis: connection pool: failed to dial after 5 attempts: dial tcp [::1]:6373: connectex: No connection could be made because the target machine actively refused it.
+redis: 2026/06/11 15:32:56 pool.go:715: redis: connection pool: failed to dial after 5 attempts: dial tcp [::1]:6373: connectex: No connection could be made because the target machine actively refused it.
+redis: 2026/06/11 15:32:56 pool.go:715: redis: connection pool: failed to dial after 5 attempts: dial tcp [::1]:6373: connectex: No connection could be made because the target machine actively refused it.
+redis: 2026/06/11 15:32:56 pool.go:715: redis: connection pool: failed to dial after 5 attempts: dial tcp [::1]:6373: connectex: No connection could be made because the target machine actively refused it.
+redis: 2026/06/11 15:32:57 pool.go:715: redis: connection pool: failed to dial after 5 attempts: dial tcp [::1]:6376: connectex: No connection could be made because the target machine actively refused it.
+redis: 2026/06/11 15:32:57 pool.go:715: redis: connection pool: failed to dial after 5 attempts: dial tcp [::1]:6376: connectex: No connection could be made because the target machine actively refused it.
+redis: 2026/06/11 15:32:57 pool.go:715: redis: connection pool: failed to dial after 5 attempts: dial tcp [::1]:6376: connectex: No connection could be made because the target machine actively refused it.
+redis: 2026/06/11 15:32:57 pool.go:715: redis: connection pool: failed to dial after 5 attempts: dial tcp [::1]:6376: connectex: No connection could be made because the target machine actively refused it.
+redis: 2026/06/11 15:32:57 pool.go:715: redis: connection pool: failed to dial after 5 attempts: dial tcp [::1]:6376: connectex: No connection could be made because the target machine actively refused it.
+redis: 2026/06/11 15:32:57 pool.go:715: redis: connection pool: failed to dial after 5 attempts: dial tcp [::1]:6372: connectex: No connection could be made because the target machine actively refused it.
+redis: 2026/06/11 15:32:57 pool.go:715: redis: connection pool: failed to dial after 5 attempts: dial tcp [::1]:6372: connectex: No connection could be made because the target machine actively refused it.
+redis: 2026/06/11 15:32:57 pool.go:715: redis: connection pool: failed to dial after 5 attempts: dial tcp [::1]:6372: connectex: No connection could be made because the target machine actively refused it.
+redis: 2026/06/11 15:32:57 pool.go:715: redis: connection pool: failed to dial after 5 attempts: dial tcp [::1]:6372: connectex: No connection could be made because the target machine actively refused it.
+redis: 2026/06/11 15:32:57 pool.go:715: redis: connection pool: failed to dial after 5 attempts: dial tcp [::1]:6372: connectex: No connection could be made because the target machine actively refused it.
+redis: 2026/06/11 15:32:57 pool.go:715: redis: connection pool: failed to dial after 5 attempts: dial tcp [::1]:6371: connectex: No connection could be made because the target machine actively refused it.
+redis: 2026/06/11 15:32:57 pool.go:715: redis: connection pool: failed to dial after 5 attempts: dial tcp [::1]:6371: connectex: No connection could be made because the target machine actively refused it.
+redis: 2026/06/11 15:32:57 pool.go:715: redis: connection pool: failed to dial after 5 attempts: dial tcp [::1]:6371: connectex: No connection could be made because the target machine actively refused it.
+redis: 2026/06/11 15:32:57 pool.go:715: redis: connection pool: failed to dial after 5 attempts: dial tcp [::1]:6371: connectex: No connection could be made because the target machine actively refused it.
+2026-06-11T15:32:57.857+0700	FATAL	limiter-engine/main.go:71	redis connection failed	{"error": "store: redis ping: dial tcp [::1]:6375: connectex: No connection could be made because the target machine actively refused it."}
+main.main
+	D:/Nam4/go-velox/cmd/limiter-engine/main.go:71
+runtime.main
+	C:/Program Files/Go/src/runtime/proc.go:290
+redis: 2026/06/11 15:32:57 pool.go:715: redis: connection pool: failed to dial after 5 attempts: dial tcp [::1]:6371: connectex: No connection could be made because the target machine actively refused it.
+exit status 1

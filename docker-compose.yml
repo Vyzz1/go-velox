@@ -4,18 +4,9 @@ name: velox-infra
 
 x-redis-common: &redis-common
   image: redis:7.0-alpine
-  command:
-    - redis-server
-    - --cluster-enabled
-    - "yes"
-    - --cluster-config-file
-    - nodes.conf
-    - --cluster-node-timeout
-    - "5000"
-    - --appendonly
-    - "yes"
   networks:
     - velox-network
+  profiles: [stack]
   healthcheck:
     test: ["CMD", "redis-cli", "ping"]
     interval: 5s
@@ -24,47 +15,62 @@ x-redis-common: &redis-common
 
 services:
   # ─────────────────────────────────────────
-  # Redis Cluster: 3 masters + 3 replicas
+  # Redis — standalone (dev profile)
+  # Used when Go services run on the host.
+  # ─────────────────────────────────────────
+  redis:
+    image: redis:7.0-alpine
+    container_name: velox-redis
+    profiles: [dev]
+    ports:
+      - "6379:6379"
+    networks:
+      - velox-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # ─────────────────────────────────────────
+  # Redis Cluster — 3 masters + 3 replicas (stack profile)
+  # Used when all services run inside Docker.
+  # Internal DNS resolves redis-1..6 — no announce-ip tricks needed.
   # ─────────────────────────────────────────
   redis-1:
     <<: *redis-common
     container_name: velox-redis-1
-    ports:
-      - "6371:6379"
+    command: ["redis-server","--cluster-enabled","yes","--cluster-config-file","nodes.conf","--cluster-node-timeout","5000","--appendonly","yes"]
 
   redis-2:
     <<: *redis-common
     container_name: velox-redis-2
-    ports:
-      - "6372:6379"
+    command: ["redis-server","--cluster-enabled","yes","--cluster-config-file","nodes.conf","--cluster-node-timeout","5000","--appendonly","yes"]
 
   redis-3:
     <<: *redis-common
     container_name: velox-redis-3
-    ports:
-      - "6373:6379"
+    command: ["redis-server","--cluster-enabled","yes","--cluster-config-file","nodes.conf","--cluster-node-timeout","5000","--appendonly","yes"]
 
   redis-4:
     <<: *redis-common
     container_name: velox-redis-4
-    ports:
-      - "6374:6379"
+    command: ["redis-server","--cluster-enabled","yes","--cluster-config-file","nodes.conf","--cluster-node-timeout","5000","--appendonly","yes"]
 
   redis-5:
     <<: *redis-common
     container_name: velox-redis-5
-    ports:
-      - "6375:6379"
+    command: ["redis-server","--cluster-enabled","yes","--cluster-config-file","nodes.conf","--cluster-node-timeout","5000","--appendonly","yes"]
 
   redis-6:
     <<: *redis-common
     container_name: velox-redis-6
-    ports:
-      - "6376:6379"
+    command: ["redis-server","--cluster-enabled","yes","--cluster-config-file","nodes.conf","--cluster-node-timeout","5000","--appendonly","yes"]
 
   redis-cluster-init:
     image: redis:7.0-alpine
     container_name: velox-redis-init
+    profiles: [stack]
     depends_on:
       redis-1:
         condition: service_healthy
@@ -81,17 +87,54 @@ services:
     command:
       - sh
       - -c
-      - >
-        echo 'yes' | redis-cli --cluster create
-        redis-1:6379 redis-2:6379 redis-3:6379
-        redis-4:6379 redis-5:6379 redis-6:6379
-        --cluster-replicas 1
+      - |
+        if redis-cli -h redis-1 -p 6379 cluster info | grep -q "cluster_state:ok"; then
+          echo "Redis cluster already initialized — skipping.";
+        else
+          echo 'yes' | redis-cli --cluster create \
+            redis-1:6379 redis-2:6379 redis-3:6379 \
+            redis-4:6379 redis-5:6379 redis-6:6379 \
+            --cluster-replicas 1;
+        fi
     networks:
       - velox-network
     restart: "no"
 
   # ─────────────────────────────────────────
-  # Etcd
+  # limiter-engine (stack profile)
+  # ─────────────────────────────────────────
+  limiter-engine:
+    build:
+      context: .
+      dockerfile: cmd/limiter-engine/Dockerfile
+    container_name: velox-limiter-engine
+    profiles: [stack]
+    environment:
+      SERVICE_NAME: limiter-engine
+      ENVIRONMENT: development
+      LOG_LEVEL: info
+      LOG_FORMAT: json
+      GRPC_ADDR: :9090
+      METRICS_ADDR: :9091
+      OTLP_ENDPOINT: jaeger:4317
+      REDIS_ADDRS: redis-1:6379,redis-2:6379,redis-3:6379,redis-4:6379,redis-5:6379,redis-6:6379
+      LIMITER_DEFAULT_LIMIT: "100"
+      LIMITER_DEFAULT_PERIOD_SECS: "60"
+      LIMITER_DEFAULT_BURST: "10"
+    ports:
+      - "9090:9090"   # gRPC — exposed for grpcurl/testing from host
+      - "9091:9091"   # metrics
+    depends_on:
+      redis-cluster-init:
+        condition: service_completed_successfully
+      jaeger:
+        condition: service_started
+    networks:
+      - velox-network
+    restart: on-failure
+
+  # ─────────────────────────────────────────
+  # Etcd (always)
   # ─────────────────────────────────────────
   etcd:
     image: gcr.io/etcd-development/etcd:v3.5.18
@@ -118,7 +161,7 @@ services:
       - velox-network
 
   # ─────────────────────────────────────────
-  # Jaeger
+  # Jaeger (always)
   # ─────────────────────────────────────────
   jaeger:
     image: jaegertracing/all-in-one:latest
@@ -133,13 +176,13 @@ services:
       - velox-network
 
   # ─────────────────────────────────────────
-  # Prometheus
+  # Prometheus (always)
   # ─────────────────────────────────────────
   prometheus:
     image: prom/prometheus:v2.51.0
     container_name: velox-prometheus
     ports:
-      - "9090:9090"
+      - "9092:9090"
     volumes:
       - ./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus-data:/prometheus
@@ -150,7 +193,7 @@ services:
       - velox-network
 
   # ─────────────────────────────────────────
-  # Grafana
+  # Grafana (always)
   # ─────────────────────────────────────────
   grafana:
     image: grafana/grafana:10.4.0
