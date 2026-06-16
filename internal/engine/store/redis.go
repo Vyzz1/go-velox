@@ -15,8 +15,8 @@ import (
 // Store executes rate-limit checks against a Redis instance.
 // Scripts are loaded once and invoked via EVALSHA on every check.
 type Store struct {
-	client          redis.UniversalClient
-	gcraScript      *redis.Script
+	client           redis.UniversalClient
+	gcraScript       *redis.Script
 	slidingWinScript *redis.Script
 }
 

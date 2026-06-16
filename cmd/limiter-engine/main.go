@@ -9,12 +9,14 @@ import (
 	"syscall"
 	"time"
 
+	clientv3 "go.etcd.io/etcd/client/v3"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
 
 	grpchandler "github.com/Vyzz1/go-velox.git/internal/engine/delivery/grpc"
 	"github.com/Vyzz1/go-velox.git/internal/engine/domain"
+	"github.com/Vyzz1/go-velox.git/internal/engine/rules"
 	"github.com/Vyzz1/go-velox.git/internal/engine/store"
 	"github.com/Vyzz1/go-velox.git/internal/engine/usecase"
 	"github.com/Vyzz1/go-velox.git/pkg/config"
@@ -32,6 +34,8 @@ type Config struct {
 	MetricsAddr       string `env:"METRICS_ADDR"                 envDefault:":9091"`
 	OTLPEndpoint      string `env:"OTLP_ENDPOINT"                envDefault:"localhost:4317"`
 	RedisAddrs        string `env:"REDIS_ADDRS"                  envDefault:"localhost:6379"`
+	EtcdEndpoints     string `env:"ETCD_ENDPOINTS"               envDefault:"localhost:2379"`
+	EtcdPrefix        string `env:"ETCD_PREFIX"                  envDefault:"/velox/rules/"`
 	DefaultLimit      uint64 `env:"LIMITER_DEFAULT_LIMIT"        envDefault:"100"`
 	DefaultPeriodSecs int64  `env:"LIMITER_DEFAULT_PERIOD_SECS"  envDefault:"60"`
 	DefaultBurst      uint64 `env:"LIMITER_DEFAULT_BURST"        envDefault:"10"`
@@ -73,13 +77,28 @@ func main() {
 	}
 	defer redisStore.Close() //nolint:errcheck
 
-	rules := &domain.StaticProvider{Default: domain.Rule{
+	defaultRule := domain.Rule{
 		Limit:  cfg.DefaultLimit,
 		Period: time.Duration(cfg.DefaultPeriodSecs) * time.Second,
 		Burst:  cfg.DefaultBurst,
-	}}
+	}
 
-	checkLimitUC := usecase.NewCheckLimit(redisStore, rules)
+	etcdClient, err := clientv3.New(clientv3.Config{
+		Endpoints:   splitTrim(cfg.EtcdEndpoints),
+		DialTimeout: 5 * time.Second,
+	})
+	if err != nil {
+		log.Fatal("etcd connection failed", zap.Error(err))
+	}
+	defer etcdClient.Close() //nolint:errcheck
+
+	ruleProvider, err := rules.New(ctx, etcdClient, cfg.EtcdPrefix, defaultRule, log)
+	if err != nil {
+		log.Fatal("rule provider init failed", zap.Error(err))
+	}
+	defer ruleProvider.Close()
+
+	checkLimitUC := usecase.NewCheckLimit(redisStore, ruleProvider)
 	healthUC := usecase.NewHealth(redisStore)
 	srv := grpchandler.NewServer(checkLimitUC, healthUC, log)
 

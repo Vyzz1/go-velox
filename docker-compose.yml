@@ -118,6 +118,8 @@ services:
       METRICS_ADDR: :9091
       OTLP_ENDPOINT: jaeger:4317
       REDIS_ADDRS: redis-1:6379,redis-2:6379,redis-3:6379,redis-4:6379,redis-5:6379,redis-6:6379
+      ETCD_ENDPOINTS: etcd:2379
+      ETCD_PREFIX: /velox/rules/
       LIMITER_DEFAULT_LIMIT: "100"
       LIMITER_DEFAULT_PERIOD_SECS: "60"
       LIMITER_DEFAULT_BURST: "10"
@@ -128,6 +130,8 @@ services:
       redis-cluster-init:
         condition: service_completed_successfully
       jaeger:
+        condition: service_started
+      etcd:
         condition: service_started
     networks:
       - velox-network
@@ -156,6 +160,65 @@ services:
       - "8090:8090"   # metrics
     depends_on:
       limiter-engine:
+        condition: service_started
+      jaeger:
+        condition: service_started
+    networks:
+      - velox-network
+    restart: on-failure
+
+  # ─────────────────────────────────────────
+  # Postgres — source of truth for rules (stack profile)
+  # ─────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: velox-postgres
+    profiles: [stack]
+    environment:
+      POSTGRES_USER: velox
+      POSTGRES_PASSWORD: velox
+      POSTGRES_DB: velox
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./infra/postgres/schema.sql:/docker-entrypoint-initdb.d/schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U velox -d velox"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks:
+      - velox-network
+
+  # ─────────────────────────────────────────
+  # config-service (stack profile)
+  # REST rule management; writes Postgres + mirrors to etcd for hot-reload.
+  # ─────────────────────────────────────────
+  config-service:
+    build:
+      context: .
+      dockerfile: cmd/config-service/Dockerfile
+    container_name: velox-config-service
+    profiles: [stack]
+    environment:
+      SERVICE_NAME: config-service
+      ENVIRONMENT: development
+      LOG_LEVEL: info
+      LOG_FORMAT: json
+      HTTP_ADDR: :8081
+      METRICS_ADDR: :8082
+      OTLP_ENDPOINT: jaeger:4317
+      DATABASE_URL: postgres://velox:velox@postgres:5432/velox?sslmode=disable
+      ETCD_ENDPOINTS: etcd:2379
+      ETCD_PREFIX: /velox/rules/
+    ports:
+      - "8081:8081"   # REST — rule management API
+      - "8082:8082"   # metrics
+    depends_on:
+      postgres:
+        condition: service_healthy
+      etcd:
         condition: service_started
       jaeger:
         condition: service_started
@@ -248,5 +311,6 @@ networks:
 
 volumes:
   etcd-data:
+  postgres-data:
   prometheus-data:
   grafana-data:
