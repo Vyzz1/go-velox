@@ -134,6 +134,36 @@ services:
     restart: on-failure
 
   # ─────────────────────────────────────────
+  # api-gateway (stack profile)
+  # ─────────────────────────────────────────
+  api-gateway:
+    build:
+      context: .
+      dockerfile: cmd/api-gateway/Dockerfile
+    container_name: velox-api-gateway
+    profiles: [stack]
+    environment:
+      SERVICE_NAME: api-gateway
+      ENVIRONMENT: development
+      LOG_LEVEL: info
+      LOG_FORMAT: json
+      HTTP_ADDR: :8080
+      METRICS_ADDR: :8090
+      OTLP_ENDPOINT: jaeger:4317
+      ENGINE_ADDR: limiter-engine:9090
+    ports:
+      - "8080:8080"   # REST — external client entry point
+      - "8090:8090"   # metrics
+    depends_on:
+      limiter-engine:
+        condition: service_started
+      jaeger:
+        condition: service_started
+    networks:
+      - velox-network
+    restart: on-failure
+
+  # ─────────────────────────────────────────
   # Etcd (always)
   # ─────────────────────────────────────────
   etcd:
