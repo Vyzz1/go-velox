@@ -1,5 +1,7 @@
 # AGENTS.md
 
+-> See also @docs/clean-architecture.md
+
 ## Project Identity
 
 - Name: `govelox`
