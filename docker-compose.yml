@@ -227,6 +227,85 @@ services:
     restart: on-failure
 
   # ─────────────────────────────────────────
+  # sync-agent — gossip membership cluster (stack profile)
+  # 3 nodes form a SWIM cluster; node-2/3 join via node-1 as seed.
+  # Demo: curl each node's /v1/members → all see 3 alive; kill one → others
+  # mark it dead within the failure-detection window; restart → it rejoins.
+  # ─────────────────────────────────────────
+  sync-agent-1:
+    build:
+      context: .
+      dockerfile: cmd/sync-agent/Dockerfile
+    container_name: velox-sync-agent-1
+    profiles: [stack]
+    environment:
+      SERVICE_NAME: sync-agent
+      ENVIRONMENT: development
+      LOG_LEVEL: info
+      LOG_FORMAT: json
+      NODE_ID: sync-agent-1
+      GOSSIP_PORT: "7070"
+      HTTP_ADDR: :7072
+      METRICS_ADDR: :7071
+      # First node: no seeds — it forms the cluster the others join.
+      SEEDS: ""
+    ports:
+      - "7072:7072"   # membership API
+    networks:
+      - velox-network
+    restart: on-failure
+
+  sync-agent-2:
+    build:
+      context: .
+      dockerfile: cmd/sync-agent/Dockerfile
+    container_name: velox-sync-agent-2
+    profiles: [stack]
+    environment:
+      SERVICE_NAME: sync-agent
+      ENVIRONMENT: development
+      LOG_LEVEL: info
+      LOG_FORMAT: json
+      NODE_ID: sync-agent-2
+      GOSSIP_PORT: "7070"
+      HTTP_ADDR: :7072
+      METRICS_ADDR: :7071
+      SEEDS: "sync-agent-1:7070"
+    ports:
+      - "7073:7072"
+    depends_on:
+      sync-agent-1:
+        condition: service_started
+    networks:
+      - velox-network
+    restart: on-failure
+
+  sync-agent-3:
+    build:
+      context: .
+      dockerfile: cmd/sync-agent/Dockerfile
+    container_name: velox-sync-agent-3
+    profiles: [stack]
+    environment:
+      SERVICE_NAME: sync-agent
+      ENVIRONMENT: development
+      LOG_LEVEL: info
+      LOG_FORMAT: json
+      NODE_ID: sync-agent-3
+      GOSSIP_PORT: "7070"
+      HTTP_ADDR: :7072
+      METRICS_ADDR: :7071
+      SEEDS: "sync-agent-1:7070"
+    ports:
+      - "7074:7072"
+    depends_on:
+      sync-agent-1:
+        condition: service_started
+    networks:
+      - velox-network
+    restart: on-failure
+
+  # ─────────────────────────────────────────
   # Etcd (always)
   # ─────────────────────────────────────────
   etcd:
