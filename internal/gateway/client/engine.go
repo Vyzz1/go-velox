@@ -4,26 +4,28 @@ import (
 	"context"
 	"fmt"
 
-	"google.golang.org/grpc"
-
 	"github.com/Vyzz1/go-velox.git/internal/gateway/domain"
 	enginev1 "github.com/Vyzz1/go-velox.git/proto/gen/engine/v1"
 )
 
 // EngineClient adapts the limiter-engine gRPC client to the gateway's
-// domain.Limiter port, translating between domain types and the engine wire
-// contract.
+// domain.Limiter port, using a Consistent Hashing router to dynamically select connections.
 type EngineClient struct {
-	rpc enginev1.LimiterEngineServiceClient
+	router *Router
 }
 
-// New wraps an existing gRPC connection to the limiter-engine.
-func New(conn *grpc.ClientConn) *EngineClient {
-	return &EngineClient{rpc: enginev1.NewLimiterEngineServiceClient(conn)}
+// New wraps an existing consistent hash router.
+func New(router *Router) *EngineClient {
+	return &EngineClient{router: router}
 }
 
 func (c *EngineClient) Check(ctx context.Context, in domain.CheckInput) (domain.CheckResult, error) {
-	resp, err := c.rpc.CheckLimit(ctx, &enginev1.CheckLimitRequest{
+	rpc, err := c.router.GetClient(in.TenantID)
+	if err != nil {
+		return domain.CheckResult{}, fmt.Errorf("router GetClient: %w", err)
+	}
+
+	resp, err := rpc.CheckLimit(ctx, &enginev1.CheckLimitRequest{
 		TenantId:   in.TenantID,
 		Subject:    in.Subject,
 		Resource:   in.Resource,

@@ -18,6 +18,19 @@ type Member struct {
 	Addr  string // host:port the node gossips on
 	State State
 	Local bool // true when this is the node we are running on
+
+	// Role identifies what this node represents in the cluster, e.g. "engine"
+	// for a sync-agent running as a sidecar of a limiter-engine. Empty when the
+	// node advertised no metadata.
+	Role string
+	// EngineAddr is the gRPC address (host:port) of the limiter-engine this node
+	// is a sidecar for. Consumers (the gateway router) dial this address rather
+	// than the gossip Addr. Empty for non-engine nodes.
+	EngineAddr string
+	// Healthy reports whether the sidecar's last health probe of its local
+	// limiter-engine succeeded. The gateway routes only to healthy engines.
+	// Always false for non-engine nodes (Role != "engine").
+	Healthy bool
 }
 
 // Cluster is the port the use case depends on: a live view of cluster

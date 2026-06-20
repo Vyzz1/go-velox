@@ -18,10 +18,13 @@ type membership interface {
 }
 
 type memberResponse struct {
-	ID    string `json:"id"`
-	Addr  string `json:"addr"`
-	State string `json:"state"`
-	Local bool   `json:"local"`
+	ID         string `json:"id"`
+	Addr       string `json:"addr"`
+	State      string `json:"state"`
+	Local      bool   `json:"local"`
+	Role       string `json:"role,omitempty"`
+	EngineAddr string `json:"engine_addr,omitempty"`
+	Healthy    bool   `json:"healthy"`
 }
 
 type membersResponse struct {
@@ -50,10 +53,13 @@ func membersHandler(uc membership) http.HandlerFunc {
 		out := make([]memberResponse, 0, len(members))
 		for _, m := range members {
 			out = append(out, memberResponse{
-				ID:    m.ID,
-				Addr:  m.Addr,
-				State: string(m.State),
-				Local: m.Local,
+				ID:         m.ID,
+				Addr:       m.Addr,
+				State:      string(m.State),
+				Local:      m.Local,
+				Role:       m.Role,
+				EngineAddr: m.EngineAddr,
+				Healthy:    m.Healthy,
 			})
 		}
 		writeJSON(w, http.StatusOK, membersResponse{

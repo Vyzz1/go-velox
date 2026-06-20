@@ -13,6 +13,53 @@ x-redis-common: &redis-common
     timeout: 3s
     retries: 20
 
+# Shared definition for every limiter-engine replica. Each replica is an
+# identical, stateless decision node (shared Redis + etcd); only the container
+# name and published host ports differ per instance.
+x-engine-common: &engine-common
+  build:
+    context: .
+    dockerfile: cmd/limiter-engine/Dockerfile
+  profiles: [stack]
+  environment:
+    SERVICE_NAME: limiter-engine
+    ENVIRONMENT: development
+    LOG_LEVEL: info
+    LOG_FORMAT: json
+    GRPC_ADDR: :9090
+    METRICS_ADDR: :9091
+    OTLP_ENDPOINT: jaeger:4317
+    REDIS_ADDRS: redis-1:6379,redis-2:6379,redis-3:6379,redis-4:6379,redis-5:6379,redis-6:6379
+    ETCD_ENDPOINTS: etcd:2379
+    ETCD_PREFIX: /velox/rules/
+    LIMITER_DEFAULT_LIMIT: "100"
+    LIMITER_DEFAULT_PERIOD_SECS: "60"
+    LIMITER_DEFAULT_BURST: "10"
+  depends_on:
+    redis-cluster-init:
+      condition: service_completed_successfully
+    jaeger:
+      condition: service_started
+    etcd:
+      condition: service_started
+  networks:
+    - velox-network
+  restart: on-failure
+
+# Shared definition for every sync-agent sidecar. Each sidecar is co-located with
+# one engine replica and advertises that engine's gRPC address over gossip
+# (ROLE=engine, ENGINE_ADDR), so the gateway can discover the live engine fleet
+# from any sidecar's /v1/members. Per-instance env (NODE_ID, ENGINE_ADDR, SEEDS)
+# is set on each service below.
+x-syncagent-common: &syncagent-common
+  build:
+    context: .
+    dockerfile: cmd/sync-agent/Dockerfile
+  profiles: [stack]
+  networks:
+    - velox-network
+  restart: on-failure
+
 services:
   # ─────────────────────────────────────────
   # Redis — standalone (dev profile)
@@ -101,41 +148,31 @@ services:
     restart: "no"
 
   # ─────────────────────────────────────────
-  # limiter-engine (stack profile)
+  # limiter-engine — 3 replicas (stack profile)
+  # Stateless decision nodes behind the gateway's consistent-hash ring. Each is
+  # reachable on the internal network as limiter-engine-{1,2,3}:9090; host ports
+  # are mapped on distinct numbers for per-replica grpcurl/testing.
   # ─────────────────────────────────────────
-  limiter-engine:
-    build:
-      context: .
-      dockerfile: cmd/limiter-engine/Dockerfile
-    container_name: velox-limiter-engine
-    profiles: [stack]
-    environment:
-      SERVICE_NAME: limiter-engine
-      ENVIRONMENT: development
-      LOG_LEVEL: info
-      LOG_FORMAT: json
-      GRPC_ADDR: :9090
-      METRICS_ADDR: :9091
-      OTLP_ENDPOINT: jaeger:4317
-      REDIS_ADDRS: redis-1:6379,redis-2:6379,redis-3:6379,redis-4:6379,redis-5:6379,redis-6:6379
-      ETCD_ENDPOINTS: etcd:2379
-      ETCD_PREFIX: /velox/rules/
-      LIMITER_DEFAULT_LIMIT: "100"
-      LIMITER_DEFAULT_PERIOD_SECS: "60"
-      LIMITER_DEFAULT_BURST: "10"
+  limiter-engine-1:
+    <<: *engine-common
+    container_name: velox-limiter-engine-1
     ports:
-      - "9090:9090"   # gRPC — exposed for grpcurl/testing from host
+      - "9090:9090"   # gRPC
       - "9091:9091"   # metrics
-    depends_on:
-      redis-cluster-init:
-        condition: service_completed_successfully
-      jaeger:
-        condition: service_started
-      etcd:
-        condition: service_started
-    networks:
-      - velox-network
-    restart: on-failure
+
+  limiter-engine-2:
+    <<: *engine-common
+    container_name: velox-limiter-engine-2
+    ports:
+      - "9095:9090"   # gRPC
+      - "9096:9091"   # metrics
+
+  limiter-engine-3:
+    <<: *engine-common
+    container_name: velox-limiter-engine-3
+    ports:
+      - "9097:9090"   # gRPC
+      - "9098:9091"   # metrics
 
   # ─────────────────────────────────────────
   # api-gateway (stack profile)
@@ -154,12 +191,15 @@ services:
       HTTP_ADDR: :8080
       METRICS_ADDR: :8090
       OTLP_ENDPOINT: jaeger:4317
-      ENGINE_ADDR: limiter-engine:9090
+      # Discovery: poll a sidecar's membership API and build the engine ring from
+      # the advertised engine_addr values. ENGINE_PORT is only a startup fallback.
+      SYNC_AGENT_URL: http://sync-agent-1:7072
+      ENGINE_PORT: "9090"
     ports:
       - "8080:8080"   # REST — external client entry point
       - "8090:8090"   # metrics
     depends_on:
-      limiter-engine:
+      sync-agent-1:
         condition: service_started
       jaeger:
         condition: service_started
@@ -227,17 +267,16 @@ services:
     restart: on-failure
 
   # ─────────────────────────────────────────
-  # sync-agent — gossip membership cluster (stack profile)
-  # 3 nodes form a SWIM cluster; node-2/3 join via node-1 as seed.
-  # Demo: curl each node's /v1/members → all see 3 alive; kill one → others
-  # mark it dead within the failure-detection window; restart → it rejoins.
+  # sync-agent — gossip sidecars (stack profile)
+  # One sidecar per limiter-engine replica. Each forms a SWIM cluster (node-2/3
+  # seed via node-1) and advertises its engine's gRPC address over gossip
+  # (ROLE=engine, ENGINE_ADDR). The gateway reads /v1/members from sync-agent-1
+  # to discover the live engine fleet.
+  # Demo: curl any sidecar's /v1/members → all 3 engines listed with engine_addr.
   # ─────────────────────────────────────────
   sync-agent-1:
-    build:
-      context: .
-      dockerfile: cmd/sync-agent/Dockerfile
+    <<: *syncagent-common
     container_name: velox-sync-agent-1
-    profiles: [stack]
     environment:
       SERVICE_NAME: sync-agent
       ENVIRONMENT: development
@@ -247,20 +286,19 @@ services:
       GOSSIP_PORT: "7070"
       HTTP_ADDR: :7072
       METRICS_ADDR: :7071
+      ROLE: engine
+      ENGINE_ADDR: limiter-engine-1:9090
       # First node: no seeds — it forms the cluster the others join.
       SEEDS: ""
     ports:
       - "7072:7072"   # membership API
-    networks:
-      - velox-network
-    restart: on-failure
+    depends_on:
+      limiter-engine-1:
+        condition: service_started
 
   sync-agent-2:
-    build:
-      context: .
-      dockerfile: cmd/sync-agent/Dockerfile
+    <<: *syncagent-common
     container_name: velox-sync-agent-2
-    profiles: [stack]
     environment:
       SERVICE_NAME: sync-agent
       ENVIRONMENT: development
@@ -270,22 +308,20 @@ services:
       GOSSIP_PORT: "7070"
       HTTP_ADDR: :7072
       METRICS_ADDR: :7071
+      ROLE: engine
+      ENGINE_ADDR: limiter-engine-2:9090
       SEEDS: "sync-agent-1:7070"
     ports:
       - "7073:7072"
     depends_on:
+      limiter-engine-2:
+        condition: service_started
       sync-agent-1:
         condition: service_started
-    networks:
-      - velox-network
-    restart: on-failure
 
   sync-agent-3:
-    build:
-      context: .
-      dockerfile: cmd/sync-agent/Dockerfile
+    <<: *syncagent-common
     container_name: velox-sync-agent-3
-    profiles: [stack]
     environment:
       SERVICE_NAME: sync-agent
       ENVIRONMENT: development
@@ -295,15 +331,16 @@ services:
       GOSSIP_PORT: "7070"
       HTTP_ADDR: :7072
       METRICS_ADDR: :7071
+      ROLE: engine
+      ENGINE_ADDR: limiter-engine-3:9090
       SEEDS: "sync-agent-1:7070"
     ports:
       - "7074:7072"
     depends_on:
+      limiter-engine-3:
+        condition: service_started
       sync-agent-1:
         condition: service_started
-    networks:
-      - velox-network
-    restart: on-failure
 
   # ─────────────────────────────────────────
   # Etcd (always)

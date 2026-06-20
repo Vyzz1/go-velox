@@ -17,6 +17,7 @@ import (
 
 	"github.com/Vyzz1/go-velox.git/internal/syncagent/cluster"
 	httpdelivery "github.com/Vyzz1/go-velox.git/internal/syncagent/delivery/http"
+	"github.com/Vyzz1/go-velox.git/internal/syncagent/health"
 	"github.com/Vyzz1/go-velox.git/internal/syncagent/usecase"
 	"github.com/Vyzz1/go-velox.git/pkg/config"
 	"github.com/Vyzz1/go-velox.git/pkg/logger"
@@ -33,6 +34,21 @@ type Config struct {
 	Seeds         string `env:"SEEDS"                 envDefault:""`
 	HTTPAddr      string `env:"HTTP_ADDR"             envDefault:":7072"`
 	MetricsAddr   string `env:"METRICS_ADDR"          envDefault:":7071"`
+	// Sidecar identity advertised to peers via gossip metadata. When this agent
+	// is co-located with a limiter-engine, set Role=engine and EngineAddr to that
+	// engine's gRPC address so the gateway can discover and route to it.
+	Role       string `env:"ROLE"        envDefault:""`
+	EngineAddr string `env:"ENGINE_ADDR" envDefault:""`
+
+	// Engine health-check knobs (only used when Role=engine). Durations are in
+	// milliseconds because the config loader treats time.Duration as a raw int.
+	// The sidecar advertises healthy=false until the engine passes; it then
+	// flips unhealthy after UnhealthyThreshold consecutive failures so the
+	// gateway stops routing to a dead engine, and back after HealthyThreshold.
+	HealthIntervalMs   int `env:"ENGINE_HEALTH_INTERVAL_MS"  envDefault:"2000"`
+	HealthTimeoutMs    int `env:"ENGINE_HEALTH_TIMEOUT_MS"   envDefault:"1000"`
+	UnhealthyThreshold int `env:"ENGINE_UNHEALTHY_THRESHOLD" envDefault:"3"`
+	HealthyThreshold   int `env:"ENGINE_HEALTHY_THRESHOLD"   envDefault:"1"`
 }
 
 func main() {
@@ -61,6 +77,8 @@ func main() {
 		zap.Int("gossip_port", cfg.GossipPort),
 		zap.String("http", cfg.HTTPAddr),
 		zap.String("metrics", cfg.MetricsAddr),
+		zap.String("role", cfg.Role),
+		zap.String("engine_addr", cfg.EngineAddr),
 		zap.Strings("seeds", seeds),
 	)
 
@@ -74,6 +92,8 @@ func main() {
 		AdvertiseAddr: cfg.AdvertiseAddr,
 		AdvertisePort: cfg.AdvertisePort,
 		Seeds:         seeds,
+		Role:          cfg.Role,
+		EngineAddr:    cfg.EngineAddr,
 	}, log)
 	if err != nil {
 		log.Fatal("gossip init failed", zap.Error(err))
@@ -84,6 +104,31 @@ func main() {
 		log.Warn("join cluster failed", zap.Error(err))
 	} else if n > 0 {
 		log.Info("joined cluster", zap.Int("contacted", n))
+	}
+
+	// When this agent is an engine sidecar, probe its local engine and tie the
+	// result to the health we gossip — so the gateway drops a dead engine from
+	// its hash ring without the sidecar itself having to leave the cluster.
+	ctx, cancelHealth := context.WithCancel(context.Background())
+	defer cancelHealth()
+
+	var engineProbe *health.EngineProbe
+	if cfg.Role == "engine" && cfg.EngineAddr != "" {
+		engineProbe, err = health.NewEngineProbe(cfg.EngineAddr)
+		if err != nil {
+			log.Fatal("engine probe init failed", zap.Error(err))
+		}
+		healthUC := usecase.NewHealthCheck(engineProbe, gossip, usecase.HealthCheckConfig{
+			Interval:           time.Duration(cfg.HealthIntervalMs) * time.Millisecond,
+			Timeout:            time.Duration(cfg.HealthTimeoutMs) * time.Millisecond,
+			UnhealthyThreshold: cfg.UnhealthyThreshold,
+			HealthyThreshold:   cfg.HealthyThreshold,
+		}, log)
+		go healthUC.Run(ctx)
+		log.Info("engine health-check started",
+			zap.String("engine_addr", cfg.EngineAddr),
+			zap.Int("interval_ms", cfg.HealthIntervalMs),
+		)
 	}
 
 	membershipUC := usecase.NewMembership(gossip)
@@ -107,6 +152,14 @@ func main() {
 
 	<-quit
 	log.Info("shutting down sync-agent...")
+
+	// Stop probing the engine and release its connection before leaving gossip.
+	cancelHealth()
+	if engineProbe != nil {
+		if err := engineProbe.Close(); err != nil {
+			log.Warn("engine probe close error", zap.Error(err))
+		}
+	}
 
 	// Broadcast an intentional leave so peers mark us "left" promptly.
 	if err := gossip.Leave(5 * time.Second); err != nil {

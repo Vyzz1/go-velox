@@ -8,10 +8,7 @@ import (
 	"syscall"
 	"time"
 
-	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"go.uber.org/zap"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
 
 	"github.com/Vyzz1/go-velox.git/internal/gateway/client"
 	httpdelivery "github.com/Vyzz1/go-velox.git/internal/gateway/delivery/http"
@@ -26,8 +23,9 @@ type Config struct {
 	config.Base
 	HTTPAddr     string `env:"HTTP_ADDR"     envDefault:":8080"`
 	MetricsAddr  string `env:"METRICS_ADDR"  envDefault:":8090"`
-	OTLPEndpoint string `env:"OTLP_ENDPOINT" envDefault:"localhost:4317"`
-	EngineAddr   string `env:"ENGINE_ADDR"   envDefault:"localhost:9090"`
+	OTLPEndpoint string `env:"OTLP_ENDPOINT"   envDefault:"localhost:4317"`
+	SyncAgentURL string `env:"SYNC_AGENT_URL"  envDefault:"http://localhost:7072"`
+	EnginePort   string `env:"ENGINE_PORT"     envDefault:"9090"`
 }
 
 func main() {
@@ -44,11 +42,13 @@ func main() {
 		zap.String("env", cfg.Environment),
 		zap.String("http", cfg.HTTPAddr),
 		zap.String("metrics", cfg.MetricsAddr),
-		zap.String("engine", cfg.EngineAddr),
+		zap.String("sync_agent", cfg.SyncAgentURL),
+		zap.String("engine_port", cfg.EnginePort),
 		zap.String("otlp", cfg.OTLPEndpoint),
 	)
 
-	ctx := context.Background()
+	ctx, cancelPoller := context.WithCancel(context.Background())
+	defer cancelPoller()
 	tracerShutdown, err := tracer.Init(ctx, tracer.Config{
 		ServiceName:  cfg.ServiceName,
 		Environment:  cfg.Environment,
@@ -61,18 +61,17 @@ func main() {
 	metricsSrv := metrics.New(cfg.MetricsAddr, log)
 	metricsSrv.Start()
 
-	// gRPC connection to limiter-engine; otelgrpc stats handler stitches the
-	// gateway→engine call into a single distributed trace.
-	engineConn, err := grpc.NewClient(cfg.EngineAddr,
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithStatsHandler(otelgrpc.NewClientHandler()),
-	)
-	if err != nil {
-		log.Fatal("engine dial failed", zap.Error(err))
-	}
-	defer engineConn.Close() //nolint:errcheck
+	// Initialize consistent hash router
+	router := client.NewRouter()
 
-	engine := client.New(engineConn)
+	// Initial fallback (in case sync-agent is slow/down, we at least try localhost)
+	router.UpdateMembers([]string{"localhost:" + cfg.EnginePort})
+
+	// Start sync poller to periodically fetch engine nodes
+	poller := client.NewSyncPoller(router, cfg.SyncAgentURL, 5*time.Second, log)
+	go poller.Start(ctx)
+
+	engine := client.New(router)
 	checkUC := usecase.NewCheck(engine)
 	handler := httpdelivery.Router(checkUC, log)
 
@@ -95,8 +94,10 @@ func main() {
 	<-quit
 	log.Info("shutting down api-gateway...")
 
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
+	shutdownCtx, cancelShutdown := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancelShutdown()
+
+	cancelPoller() // Stop the sync poller
 
 	if err := httpSrv.Shutdown(shutdownCtx); err != nil {
 		log.Warn("http shutdown error", zap.Error(err))
