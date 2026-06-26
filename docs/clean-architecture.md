@@ -105,7 +105,7 @@ import external packages (Redis, pgx, etcd clientv3, gRPC).
 internal/engine/
 ├── store/redis.go         ← Store: Redis Cluster + Lua (atomic GCRA / sliding window)
 ├── rules/etcd.go          ← RuleProvider: etcd watch + in-memory snapshot (hot-reload)
-└── algorithm/             ← GCRA + sliding-window math (pure, no I/O)
+└── algorithm/             ← GCRA + sliding-window as Lua scripts (run in Redis) + Go Params/Result types
 
 internal/configsvc/
 ├── repo/postgres.go       ← RuleStore: sqlc + pgx/v5 (source of truth)

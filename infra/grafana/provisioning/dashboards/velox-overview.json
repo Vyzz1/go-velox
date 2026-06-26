@@ -1,0 +1,150 @@
+{
+  "uid": "velox-overview",
+  "title": "Velox — Rate Limiter Overview",
+  "tags": ["velox", "rate-limiter"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "10s",
+  "time": { "from": "now-15m", "to": "now" },
+  "templating": { "list": [] },
+  "annotations": { "list": [] },
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Check rate by decision (req/s)",
+      "datasource": { "type": "prometheus", "uid": "velox-prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "fieldConfig": {
+        "defaults": { "unit": "reqps", "custom": { "drawStyle": "line", "fillOpacity": 15, "stacking": { "mode": "normal" } } },
+        "overrides": []
+      },
+      "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["mean", "lastNotNull"] } },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "velox-prometheus" },
+          "expr": "sum by (allowed) (rate(velox_limiter_checks_total[1m]))",
+          "legendFormat": "allowed={{allowed}}"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Check latency (Redis path)",
+      "datasource": { "type": "prometheus", "uid": "velox-prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "fieldConfig": {
+        "defaults": { "unit": "s", "custom": { "drawStyle": "line", "fillOpacity": 10 } },
+        "overrides": []
+      },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "velox-prometheus" },
+          "expr": "histogram_quantile(0.95, sum(rate(velox_limiter_check_duration_seconds_bucket[5m])) by (le))",
+          "legendFormat": "p95"
+        },
+        {
+          "refId": "B",
+          "datasource": { "type": "prometheus", "uid": "velox-prometheus" },
+          "expr": "histogram_quantile(0.50, sum(rate(velox_limiter_check_duration_seconds_bucket[5m])) by (le))",
+          "legendFormat": "p50"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Throttle ratio (5m)",
+      "datasource": { "type": "prometheus", "uid": "velox-prometheus" },
+      "gridPos": { "h": 6, "w": 6, "x": 0, "y": 8 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "thresholds": { "mode": "absolute", "steps": [
+            { "color": "green", "value": null },
+            { "color": "yellow", "value": 0.25 },
+            { "color": "red", "value": 0.5 }
+          ] }
+        },
+        "overrides": []
+      },
+      "options": { "colorMode": "background", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "velox-prometheus" },
+          "expr": "sum(rate(velox_limiter_checks_total{allowed=\"false\"}[5m])) / clamp_min(sum(rate(velox_limiter_checks_total[5m])), 0.001)",
+          "legendFormat": "429 ratio"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Cluster members (alive)",
+      "datasource": { "type": "prometheus", "uid": "velox-prometheus" },
+      "gridPos": { "h": 6, "w": 6, "x": 6, "y": 8 },
+      "fieldConfig": {
+        "defaults": { "unit": "short", "thresholds": { "mode": "absolute", "steps": [
+          { "color": "red", "value": null },
+          { "color": "green", "value": 1 }
+        ] } },
+        "overrides": []
+      },
+      "options": { "colorMode": "value", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "velox-prometheus" },
+          "expr": "max(velox_cluster_members)",
+          "legendFormat": "members"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Redis errors (/s)",
+      "datasource": { "type": "prometheus", "uid": "velox-prometheus" },
+      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 8 },
+      "fieldConfig": {
+        "defaults": { "unit": "short", "custom": { "drawStyle": "line", "fillOpacity": 20 } },
+        "overrides": []
+      },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "velox-prometheus" },
+          "expr": "sum(rate(velox_limiter_redis_errors_total[5m]))",
+          "legendFormat": "redis errors"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Service up",
+      "datasource": { "type": "prometheus", "uid": "velox-prometheus" },
+      "gridPos": { "h": 6, "w": 24, "x": 0, "y": 14 },
+      "fieldConfig": {
+        "defaults": { "unit": "short", "min": 0, "max": 1, "custom": { "drawStyle": "line", "lineInterpolation": "stepAfter", "fillOpacity": 10 } },
+        "overrides": []
+      },
+      "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["lastNotNull"] } },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "velox-prometheus" },
+          "expr": "up",
+          "legendFormat": "{{job}} — {{instance}}"
+        }
+      ]
+    }
+  ]
+}
