@@ -1,0 +1,148 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# limiter-engine + sync-agent sidecar — the hard part of govelox on k8s.
+#
+# Each Pod runs TWO containers that share one network namespace:
+#   • engine     — gRPC decision node on :9090 (+ metrics :9091)
+#   • sync-agent — gossip sidecar; probes the engine over localhost and
+#                  advertises the engine's ROUTABLE address to the gateway.
+#
+# It is a StatefulSet (not a Deployment) because gossip (memberlist/SWIM) needs
+# stable per-Pod identity + DNS. Deployment gives random Pod names/IPs on every
+# restart, which breaks the seed address and leaves rejoining nodes stranded.
+# ─────────────────────────────────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: velox-engine
+  namespace: velox
+  labels: { app: velox-engine }
+spec:
+  serviceName: velox-engine        # MUST match the headless Service below → gives
+                                    # each Pod stable DNS: velox-engine-0.velox-engine
+  replicas: 3
+  selector:
+    matchLabels: { app: velox-engine }
+  template:
+    metadata:
+      labels: { app: velox-engine }
+    spec:
+      # Leave gossip time to broadcast an intentional Leave on shutdown before the
+      # kubelet SIGKILLs the sidecar (main.go calls gossip.Leave on SIGTERM).
+      terminationGracePeriodSeconds: 20
+      containers:
+        # ── engine ────────────────────────────────────────────────────────────
+        - name: engine
+          image: govelox/limiter-engine:latest   # push to your registry first
+          imagePullPolicy: IfNotPresent
+          ports:
+            - { name: grpc,    containerPort: 9090 }
+            - { name: metrics, containerPort: 9091 }
+          env:
+            - { name: SERVICE_NAME, value: limiter-engine }
+            - { name: ENVIRONMENT,  value: production }
+            - { name: LOG_LEVEL,    value: info }
+            - { name: LOG_FORMAT,   value: json }
+            - { name: GRPC_ADDR,    value: ":9090" }
+            - { name: METRICS_ADDR, value: ":9091" }
+            - { name: OTLP_ENDPOINT, value: "jaeger:4317" }
+            # Redis Cluster + etcd come from their own charts/operators (see README).
+            - { name: REDIS_ADDRS,   value: "redis-cluster:6379" }
+            - { name: ETCD_ENDPOINTS, value: "etcd:2379" }
+            - { name: ETCD_PREFIX,    value: "/velox/rules/" }
+            - { name: LIMITER_DEFAULT_LIMIT,       value: "100" }
+            - { name: LIMITER_DEFAULT_PERIOD_SECS, value: "60" }
+            - { name: LIMITER_DEFAULT_BURST,       value: "10" }
+          readinessProbe:
+            httpGet: { path: /healthz, port: metrics }
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /healthz, port: metrics }
+            initialDelaySeconds: 10
+            periodSeconds: 10
+
+        # ── sync-agent sidecar ────────────────────────────────────────────────
+        - name: sync-agent
+          image: govelox/sync-agent:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - { name: gossip-tcp, containerPort: 7070, protocol: TCP }
+            - { name: gossip-udp, containerPort: 7070, protocol: UDP }
+            - { name: sa-metrics, containerPort: 7071 }
+            - { name: members,    containerPort: 7072 }
+          env:
+            - { name: SERVICE_NAME, value: sync-agent }
+            - { name: ENVIRONMENT,  value: production }
+            - { name: LOG_LEVEL,    value: info }
+            - { name: LOG_FORMAT,   value: json }
+            - { name: GOSSIP_PORT,  value: "7070" }
+            - { name: HTTP_ADDR,    value: ":7072" }
+            - { name: METRICS_ADDR, value: ":7071" }
+            - { name: ROLE,         value: engine }
+
+            # Pod name is the gossip node identity AND the base of its stable DNS.
+            - name: POD_NAME
+              valueFrom: { fieldRef: { fieldPath: metadata.name } }
+            - { name: NODE_ID, value: "$(POD_NAME)" }
+
+            # ⚠️ THE k8s TRAP compose hid:
+            # ENGINE_ADDR is used for BOTH probing the local engine AND for the
+            # value gossiped to the gateway. If we set it to "localhost:9090" the
+            # probe works, but the gateway would then dial localhost and hit
+            # ITSELF. So it must be this Pod's routable DNS, not localhost. The
+            # sidecar probing its own Pod-DNS still lands on the same engine
+            # container — correct, just one hop through the Pod IP.
+            - { name: ENGINE_ADDR, value: "$(POD_NAME).velox-engine:9090" }
+
+            # Seed off the headless Service FQDN, which resolves to ALL engine Pod
+            # IPs (publishNotReadyAddresses lets even not-yet-ready peers seed).
+            # memberlist tries every resolved address, so any live Pod bootstraps a
+            # joiner — no single-seed Pod-0 dependency, and it survives restarts.
+            # Use the FQDN, not the short name: this cluster's resolver returns
+            # NXDOMAIN for "velox-engine.velox" but resolves the full name.
+            # NOTE: the app calls Join once at startup with no retry (main.go:102);
+            # ordered StatefulSet start means a joiner always finds a live peer.
+            - { name: SEEDS, value: "velox-engine.velox.svc.cluster.local:7070" }
+          readinessProbe:
+            httpGet: { path: /healthz, port: sa-metrics }
+            initialDelaySeconds: 3
+            periodSeconds: 5
+---
+# ── Headless Service: gossip identity ─────────────────────────────────────────
+# clusterIP: None → NO load-balancing. It publishes a per-Pod DNS A-record
+# (velox-engine-0.velox-engine, -1, -2) so memberlist can seed off a specific
+# peer and so the gateway can dial a specific engine's gRPC. This is the OPPOSITE
+# of what a normal Service does — and the whole reason gossip needs it.
+apiVersion: v1
+kind: Service
+metadata:
+  name: velox-engine
+  namespace: velox
+  labels: { app: velox-engine }
+spec:
+  clusterIP: None
+  publishNotReadyAddresses: true   # gossip DNS must resolve before a Pod is Ready
+  selector: { app: velox-engine }
+  ports:
+    - { name: grpc,       port: 9090, protocol: TCP }
+    - { name: gossip-tcp, port: 7070, protocol: TCP }
+    - { name: gossip-udp, port: 7070, protocol: UDP }
+    - { name: members,    port: 7072, protocol: TCP }
+---
+# ── Membership Service: gateway → any sidecar ─────────────────────────────────
+# A normal ClusterIP Service (DOES load-balance) over the sidecars' /v1/members
+# port. Because any sidecar returns the full cluster view, spreading the
+# gateway's 5s poll across all 3 removes the single-sidecar SPOF that
+# docker-compose had (it hardcoded sync-agent-1). Two Services over one
+# StatefulSet, opposite intents: headless for gossip, ClusterIP for polling.
+apiVersion: v1
+kind: Service
+metadata:
+  name: velox-membership
+  namespace: velox
+  labels: { app: velox-engine }
+spec:
+  type: ClusterIP
+  selector: { app: velox-engine }
+  ports:
+    - { name: members, port: 7072, targetPort: members, protocol: TCP }

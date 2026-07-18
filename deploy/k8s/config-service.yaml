@@ -1,0 +1,62 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# config-service — the rule control plane. Off the request path, stateless, so a
+# plain Deployment (like the gateway). It writes rules to Postgres (source of
+# truth) and mirrors them to etcd; the engine watches etcd and hot-reloads.
+#
+# It is NOT part of the Phase-1 "hard part" (gossip/routing/failover) — it is
+# included so the full hot-reload loop can be demoed:
+#   PUT rule → Postgres + etcd → engine snapshot updates → new limit, no restart.
+# ─────────────────────────────────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: velox-config
+  namespace: velox
+  labels: { app: velox-config }
+spec:
+  replicas: 1                 # single writer of the source of truth
+  selector:
+    matchLabels: { app: velox-config }
+  template:
+    metadata:
+      labels: { app: velox-config }
+    spec:
+      containers:
+        - name: config-service
+          image: govelox/config-service:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - { name: http,    containerPort: 8081 }
+            - { name: metrics, containerPort: 8082 }
+          env:
+            - { name: SERVICE_NAME, value: config-service }
+            - { name: ENVIRONMENT,  value: production }
+            - { name: LOG_LEVEL,    value: info }
+            - { name: LOG_FORMAT,   value: json }
+            - { name: HTTP_ADDR,    value: ":8081" }
+            - { name: METRICS_ADDR, value: ":8082" }
+            - { name: OTLP_ENDPOINT, value: "jaeger:4317" }
+            # Secrets belong in a Secret in production; inline here for test infra.
+            - { name: DATABASE_URL, value: "postgres://velox:velox@postgres:5432/velox?sslmode=disable" }
+            - { name: ETCD_ENDPOINTS, value: "etcd:2379" }
+            - { name: ETCD_PREFIX,    value: "/velox/rules/" }
+          readinessProbe:
+            httpGet: { path: /healthz, port: metrics }
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /healthz, port: metrics }
+            initialDelaySeconds: 10
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: velox-config
+  namespace: velox
+  labels: { app: velox-config }
+spec:
+  type: ClusterIP
+  selector: { app: velox-config }
+  ports:
+    - { name: http, port: 8081, targetPort: http, protocol: TCP }
