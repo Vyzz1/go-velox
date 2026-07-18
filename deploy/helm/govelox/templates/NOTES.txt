@@ -1,0 +1,22 @@
+govelox {{ .Chart.AppVersion }} installed as release "{{ .Release.Name }}" in namespace "{{ .Release.Namespace }}".
+
+Components:
+  engine    StatefulSet {{ include "govelox.engine.fullname" . }} ({{ .Values.engine.replicas }} replicas, engine + sync-agent sidecar)
+  gateway   Deployment  {{ include "govelox.gateway.fullname" . }} ({{ .Values.gateway.replicas }} replicas)
+  config    Deployment  {{ include "govelox.config.fullname" . }}
+{{- if .Values.devInfra.enabled }}
+  dev-infra bundled Redis + etcd + Postgres (demo only — set devInfra.enabled=false in production)
+{{- end }}
+
+Wait for the engine fleet:
+  kubectl -n {{ .Release.Namespace }} rollout status statefulset/{{ include "govelox.engine.fullname" . }}
+
+Verify gossip converged (all engines healthy):
+  kubectl -n {{ .Release.Namespace }} run tmpcurl --image=curlimages/curl:latest --restart=Never --rm --attach --quiet --command -- \
+    curl -s http://{{ include "govelox.membership.fullname" . }}:{{ .Values.engine.sidecarHTTPPort }}/v1/members
+
+Send traffic:
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "govelox.gateway.fullname" . }} {{ .Values.gateway.httpPort }}:{{ .Values.gateway.httpPort }}
+  curl -X POST localhost:{{ .Values.gateway.httpPort }}/v1/check -H 'Content-Type: application/json' -d '{"tenant_id":"acme","subject":"u1"}'
+
+Full runbook (failover + hot-reload): deploy/k8s/TESTING.md

@@ -1,0 +1,68 @@
+# Resource names default to "velox-*" (via fullnameOverride) so they match the
+# hand-written manifests in deploy/k8s and the commands in its TESTING.md.
+fullnameOverride: velox
+nameOverride: ""
+
+image:
+  tag: latest
+  pullPolicy: IfNotPresent   # kind/Docker Desktop use locally-built images
+
+# ── limiter-engine + sync-agent sidecar (StatefulSet) ────────────────────────
+engine:
+  replicas: 3
+  image: govelox/limiter-engine
+  sidecarImage: govelox/sync-agent
+  grpcPort: 9090
+  metricsPort: 9091
+  gossipPort: 7070
+  sidecarHTTPPort: 7072
+  sidecarMetricsPort: 7071
+  terminationGracePeriodSeconds: 20
+  # Default rule when a tenant/rule has no entry in etcd.
+  defaults:
+    limit: 100
+    periodSecs: 60
+    burst: 10
+  resources: {}
+  # Spread the engine Pods across nodes for node-level failover. Ignored on a
+  # single-node cluster (preferred, not required).
+  podAntiAffinity: true
+
+# ── api-gateway (Deployment) ─────────────────────────────────────────────────
+gateway:
+  replicas: 2
+  image: govelox/api-gateway
+  httpPort: 8080
+  metricsPort: 8090
+  # Empty → chart points it at the in-cluster membership Service.
+  serviceType: ClusterIP
+  resources: {}
+
+# ── config-service (Deployment) ──────────────────────────────────────────────
+config:
+  replicas: 1
+  image: govelox/config-service
+  httpPort: 8081
+  metricsPort: 8082
+  serviceType: ClusterIP
+  resources: {}
+
+# ── External backend endpoints ───────────────────────────────────────────────
+# Defaults match the devInfra Service names below. Point these at real
+# Redis Cluster / etcd / Postgres when devInfra.enabled=false.
+redis:
+  addrs: "redis-cluster:6379"
+etcd:
+  endpoints: "etcd:2379"
+  prefix: "/velox/rules/"
+postgres:
+  url: "postgres://velox:velox@postgres:5432/velox?sslmode=disable"
+otlp:
+  endpoint: "jaeger:4317"
+
+# ── Bundled throwaway infra (demos only — DISABLE in production) ──────────────
+# A single standalone Redis (the engine's go-redis UniversalClient treats one
+# address as a non-cluster client), a single etcd, and Postgres with the schema
+# ConfigMap. Not highly-available and not persistent.
+devInfra:
+  enabled: true

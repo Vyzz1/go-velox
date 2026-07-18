@@ -1,0 +1,131 @@
+{{- $engine := include "govelox.engine.fullname" . -}}
+# ── limiter-engine + sync-agent sidecar (StatefulSet) ────────────────────────
+# StatefulSet (not Deployment) for stable gossip identity; two containers per Pod
+# so the sidecar shares its engine's lifecycle. See deploy/k8s/README.md for the
+# design rationale — this is the templated form of deploy/k8s/engine.yaml.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ $engine }}
+  labels:
+    {{- include "govelox.labels" . | nindent 4 }}
+    app.kubernetes.io/component: engine
+spec:
+  serviceName: {{ $engine }}          # must match the headless Service below
+  replicas: {{ .Values.engine.replicas }}
+  selector:
+    matchLabels:
+      app: {{ $engine }}
+  template:
+    metadata:
+      labels:
+        app: {{ $engine }}
+        app.kubernetes.io/component: engine
+    spec:
+      terminationGracePeriodSeconds: {{ .Values.engine.terminationGracePeriodSeconds }}
+      {{- if .Values.engine.podAntiAffinity }}
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app: {{ $engine }}
+                topologyKey: kubernetes.io/hostname
+      {{- end }}
+      containers:
+        # ── engine ────────────────────────────────────────────────────────────
+        - name: engine
+          image: "{{ .Values.engine.image }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - { name: grpc,    containerPort: {{ .Values.engine.grpcPort }} }
+            - { name: metrics, containerPort: {{ .Values.engine.metricsPort }} }
+          env:
+            - { name: SERVICE_NAME, value: limiter-engine }
+            - { name: LOG_LEVEL,    value: info }
+            - { name: LOG_FORMAT,   value: json }
+            - { name: GRPC_ADDR,    value: ":{{ .Values.engine.grpcPort }}" }
+            - { name: METRICS_ADDR, value: ":{{ .Values.engine.metricsPort }}" }
+            - { name: OTLP_ENDPOINT, value: {{ .Values.otlp.endpoint | quote }} }
+            - { name: REDIS_ADDRS,   value: {{ .Values.redis.addrs | quote }} }
+            - { name: ETCD_ENDPOINTS, value: {{ .Values.etcd.endpoints | quote }} }
+            - { name: ETCD_PREFIX,    value: {{ .Values.etcd.prefix | quote }} }
+            - { name: LIMITER_DEFAULT_LIMIT,       value: {{ .Values.engine.defaults.limit | quote }} }
+            - { name: LIMITER_DEFAULT_PERIOD_SECS, value: {{ .Values.engine.defaults.periodSecs | quote }} }
+            - { name: LIMITER_DEFAULT_BURST,       value: {{ .Values.engine.defaults.burst | quote }} }
+          readinessProbe:
+            httpGet: { path: /healthz, port: metrics }
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /healthz, port: metrics }
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources: {{- toYaml .Values.engine.resources | nindent 12 }}
+        # ── sync-agent sidecar ────────────────────────────────────────────────
+        - name: sync-agent
+          image: "{{ .Values.engine.sidecarImage }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - { name: gossip-tcp, containerPort: {{ .Values.engine.gossipPort }}, protocol: TCP }
+            - { name: gossip-udp, containerPort: {{ .Values.engine.gossipPort }}, protocol: UDP }
+            - { name: sa-metrics, containerPort: {{ .Values.engine.sidecarMetricsPort }} }
+            - { name: members,    containerPort: {{ .Values.engine.sidecarHTTPPort }} }
+          env:
+            - { name: SERVICE_NAME, value: sync-agent }
+            - { name: LOG_LEVEL,    value: info }
+            - { name: LOG_FORMAT,   value: json }
+            - { name: GOSSIP_PORT,  value: {{ .Values.engine.gossipPort | quote }} }
+            - { name: HTTP_ADDR,    value: ":{{ .Values.engine.sidecarHTTPPort }}" }
+            - { name: METRICS_ADDR, value: ":{{ .Values.engine.sidecarMetricsPort }}" }
+            - { name: ROLE,         value: engine }
+            - name: POD_NAME
+              valueFrom: { fieldRef: { fieldPath: metadata.name } }
+            - { name: NODE_ID, value: "$(POD_NAME)" }
+            # Routable Pod DNS (NOT localhost): this value is both probed AND
+            # gossiped to the gateway, which must be able to dial it.
+            - { name: ENGINE_ADDR, value: "$(POD_NAME).{{ include "govelox.engine.fqdn" . }}:{{ .Values.engine.grpcPort }}" }
+            # Seed off the headless Service FQDN → resolves to every engine Pod IP,
+            # so any live Pod bootstraps a joiner (survives restarts).
+            - { name: SEEDS, value: "{{ include "govelox.engine.fqdn" . }}:{{ .Values.engine.gossipPort }}" }
+          readinessProbe:
+            httpGet: { path: /healthz, port: sa-metrics }
+            initialDelaySeconds: 3
+            periodSeconds: 5
+---
+# Headless Service: per-Pod gossip DNS + direct gRPC. clusterIP: None → no LB.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $engine }}
+  labels:
+    {{- include "govelox.labels" . | nindent 4 }}
+    app.kubernetes.io/component: engine
+spec:
+  clusterIP: None
+  publishNotReadyAddresses: true
+  selector:
+    app: {{ $engine }}
+  ports:
+    - { name: grpc,       port: {{ .Values.engine.grpcPort }}, protocol: TCP }
+    - { name: gossip-tcp, port: {{ .Values.engine.gossipPort }}, protocol: TCP }
+    - { name: gossip-udp, port: {{ .Values.engine.gossipPort }}, protocol: UDP }
+    - { name: members,    port: {{ .Values.engine.sidecarHTTPPort }}, protocol: TCP }
+---
+# Membership Service: ClusterIP (DOES load-balance) so the gateway's poll spreads
+# across all sidecars — no single-sidecar SPOF.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "govelox.membership.fullname" . }}
+  labels:
+    {{- include "govelox.labels" . | nindent 4 }}
+    app.kubernetes.io/component: engine
+spec:
+  type: ClusterIP
+  selector:
+    app: {{ $engine }}
+  ports:
+    - { name: members, port: {{ .Values.engine.sidecarHTTPPort }}, targetPort: members, protocol: TCP }

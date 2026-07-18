@@ -1,0 +1,60 @@
+{{- $gw := include "govelox.gateway.fullname" . -}}
+# ── api-gateway (Deployment) ─────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $gw }}
+  labels:
+    {{- include "govelox.labels" . | nindent 4 }}
+    app.kubernetes.io/component: gateway
+spec:
+  replicas: {{ .Values.gateway.replicas }}
+  selector:
+    matchLabels:
+      app: {{ $gw }}
+  template:
+    metadata:
+      labels:
+        app: {{ $gw }}
+        app.kubernetes.io/component: gateway
+    spec:
+      containers:
+        - name: gateway
+          image: "{{ .Values.gateway.image }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - { name: http,    containerPort: {{ .Values.gateway.httpPort }} }
+            - { name: metrics, containerPort: {{ .Values.gateway.metricsPort }} }
+          env:
+            - { name: SERVICE_NAME, value: api-gateway }
+            - { name: LOG_LEVEL,    value: info }
+            - { name: LOG_FORMAT,   value: json }
+            - { name: HTTP_ADDR,    value: ":{{ .Values.gateway.httpPort }}" }
+            - { name: METRICS_ADDR, value: ":{{ .Values.gateway.metricsPort }}" }
+            - { name: OTLP_ENDPOINT, value: {{ .Values.otlp.endpoint | quote }} }
+            # Load-balanced across all sidecars.
+            - { name: SYNC_AGENT_URL, value: "http://{{ include "govelox.membership.fullname" . }}:{{ .Values.engine.sidecarHTTPPort }}" }
+            - { name: ENGINE_PORT, value: {{ .Values.engine.grpcPort | quote }} }
+          readinessProbe:
+            httpGet: { path: /healthz, port: metrics }
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /healthz, port: metrics }
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources: {{- toYaml .Values.gateway.resources | nindent 12 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $gw }}
+  labels:
+    {{- include "govelox.labels" . | nindent 4 }}
+    app.kubernetes.io/component: gateway
+spec:
+  type: {{ .Values.gateway.serviceType }}
+  selector:
+    app: {{ $gw }}
+  ports:
+    - { name: http, port: {{ .Values.gateway.httpPort }}, targetPort: http, protocol: TCP }

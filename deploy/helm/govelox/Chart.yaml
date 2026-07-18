@@ -1,0 +1,31 @@
+apiVersion: v2
+name: govelox
+description: >-
+  Distributed rate limiter — api-gateway, limiter-engine (with a co-located
+  sync-agent gossip sidecar), and config-service. Umbrella chart packaging the
+  four services; throwaway Redis/etcd/Postgres are bundled behind devInfra for
+  demos and disabled in production in favour of real charts/operators.
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
+keywords: [rate-limiter, grpc, gossip, redis, etcd]
+home: https://github.com/Vyzz1/go-velox
+
+# For production, disable devInfra and instead declare the real data stores as
+# dependencies, e.g.:
+#
+# dependencies:
+#   - name: redis-cluster
+#     version: "~11"
+#     repository: https://charts.bitnami.com/bitnami
+#     condition: redis-cluster.enabled
+#   - name: postgresql
+#     version: "~16"
+#     repository: https://charts.bitnami.com/bitnami
+#     condition: postgresql.enabled
+#   - name: etcd
+#     version: "~10"
+#     repository: https://charts.bitnami.com/bitnami
+#     condition: etcd.enabled
+#
+# Then run `helm dependency update` before installing.
