@@ -99,18 +99,20 @@ func main() {
 		log.Fatal("gossip init failed", zap.Error(err))
 	}
 
-	if n, err := gossip.Join(seeds); err != nil {
-		// Not fatal: the node still runs and peers can join it later.
-		log.Warn("join cluster failed", zap.Error(err))
-	} else if n > 0 {
-		log.Info("joined cluster", zap.Int("contacted", n))
-	}
+	// Root context for background loops (join retry + health check); cancelled on
+	// shutdown so both stop cleanly.
+	ctx, cancelHealth := context.WithCancel(context.Background())
+	defer cancelHealth()
+
+	// Join the cluster in the background, retrying until a seed is reachable.
+	// On k8s the seed's DNS is frequently not resolvable the instant we boot,
+	// and a one-shot Join would leave this node isolated forever (see
+	// docs/bugfix-syncagent-gossip-join-dns.md).
+	go joinWithRetry(ctx, gossip, seeds, log)
 
 	// When this agent is an engine sidecar, probe its local engine and tie the
 	// result to the health we gossip — so the gateway drops a dead engine from
 	// its hash ring without the sidecar itself having to leave the cluster.
-	ctx, cancelHealth := context.WithCancel(context.Background())
-	defer cancelHealth()
 
 	var engineProbe *health.EngineProbe
 	if cfg.Role == "engine" && cfg.EngineAddr != "" {
@@ -180,6 +182,37 @@ func main() {
 	}
 
 	log.Info("sync-agent stopped")
+}
+
+// joinWithRetry attempts to join the gossip cluster via the seeds, retrying with
+// exponential backoff until at least one seed is contacted or ctx is cancelled.
+// With no seeds this node is the founder and there is nothing to join. This makes
+// convergence independent of seed-DNS readiness at boot and of Pod start order.
+func joinWithRetry(ctx context.Context, gossip *cluster.Memberlist, seeds []string, log *zap.Logger) {
+	if len(seeds) == 0 {
+		return // founder node: no seeds to contact
+	}
+	const maxBackoff = 15 * time.Second
+	backoff := time.Second
+	for {
+		n, err := gossip.Join(seeds)
+		if err == nil && n > 0 {
+			log.Info("joined cluster", zap.Int("contacted", n))
+			return
+		}
+		log.Warn("join cluster failed, retrying",
+			zap.Error(err), zap.Duration("backoff", backoff))
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(backoff):
+		}
+		if backoff < maxBackoff {
+			if backoff *= 2; backoff > maxBackoff {
+				backoff = maxBackoff
+			}
+		}
+	}
 }
 
 func splitTrim(s string) []string {

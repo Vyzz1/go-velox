@@ -4,7 +4,7 @@
 - **Service**: `sync-agent` (chạy làm sidecar của `limiter-engine` trên Kubernetes)
 - **File liên quan**: `cmd/sync-agent/main.go` (đường `Join`), `deploy/k8s/engine.yaml` (`SEEDS`)
 - **Mức độ**: Cao — mỗi node thành một cluster 1 thành viên; gateway chỉ thấy 1 engine, mất routing/failover đa node
-- **Trạng thái**: Đã khắc phục ở tầng manifest (đổi `SEEDS`) & kiểm chứng; **đề xuất fix tại code** (retry `Join`) — xem mục 7
+- **Trạng thái**: Đã khắc phục **2 tầng** — manifest (`SEEDS` = Service FQDN) và **code** (`Join` retry có backoff trong `cmd/sync-agent/main.go`); cả hai đã kiểm chứng — xem mục 7
 
 ---
 
@@ -198,36 +198,53 @@ Bản Helm (`deploy/helm/govelox`, template đã nhúng sẵn `SEEDS` = Service 
    later" đúng với DNS container của docker-compose nhưng sai với vòng đời
    EndpointSlice của k8s.
 
-### Đề xuất fix tại code (chưa làm — dự kiến Phase 3)
+### Fix tại code (đã làm — Phase 3 A1)
 
-Sửa manifest chỉ **giảm nhẹ** triệu chứng; gốc rễ là `Join` không retry. Nên bọc
-`Join` trong vòng lặp có backoff, chạy tới khi mồi được ít nhất một peer:
+Sửa manifest chỉ **giảm nhẹ** triệu chứng; gốc rễ là `Join` không retry. Đã
+chuyển `Join` sang một **goroutine nền có backoff**, chạy tới khi mồi được ít nhất
+một peer (hoặc ctx bị hủy lúc shutdown) — trong `cmd/sync-agent/main.go`:
 
 ```go
-// Phác thảo — retry Join tới khi thành công (hoặc ctx hủy).
+// joinWithRetry: retry Join với backoff mũ tới khi contact được >=1 seed hoặc ctx hủy.
+// Không có seed → node founder, không cần join. Làm hội tụ độc lập với thời điểm
+// DNS sẵn sàng lẫn thứ tự khởi động Pod.
 func joinWithRetry(ctx context.Context, gossip *cluster.Memberlist, seeds []string, log *zap.Logger) {
     if len(seeds) == 0 {
-        return // node đầu tiên: không có seed là bình thường
+        return // founder node: no seeds to contact
     }
+    const maxBackoff = 15 * time.Second
     backoff := time.Second
     for {
-        if n, err := gossip.Join(seeds); err == nil && n > 0 {
+        n, err := gossip.Join(seeds)
+        if err == nil && n > 0 {
             log.Info("joined cluster", zap.Int("contacted", n))
             return
         }
+        log.Warn("join cluster failed, retrying", zap.Error(err), zap.Duration("backoff", backoff))
         select {
         case <-ctx.Done():
             return
         case <-time.After(backoff):
         }
-        if backoff < 15*time.Second {
-            backoff *= 2
+        if backoff < maxBackoff {
+            if backoff *= 2; backoff > maxBackoff {
+                backoff = maxBackoff
+            }
         }
     }
 }
 ```
 
-Với retry ở code, cụm sẽ tự hội tụ **bất kể** thời điểm DNS sẵn sàng hay thứ tự
-khởi động — kể cả khi seed trỏ vào một Pod. Đây là cách phòng ngừa đúng gốc; đổi
-`SEEDS` sang Service FQDN vẫn nên giữ như một lớp bền vững bổ sung.
+Luồng khởi động cũ gọi `Join` đồng bộ một lần; nay thay bằng `go joinWithRetry(ctx, …)`
+sau khi tạo context (context này cũng bị hủy khi shutdown nên vòng lặp dừng sạch).
+
+**Kiểm chứng (2 tiến trình gossip cục bộ, không cần k8s):** chạy node B trỏ seed
+vào node A **chưa tồn tại** → B log `join cluster failed, retrying` với backoff
+`1→2→4→8→15→15s`, vẫn phục vụ `/v1/members` bình thường. Khi khởi động node A
+(seed) lên trễ, lần retry kế của B log `joined cluster contacted=1`; `/v1/members`
+ở cả hai node trả `count:2`. Code cũ sẽ để B kẹt `count:1` vĩnh viễn.
+
+Với retry ở code, cụm tự hội tụ **bất kể** thời điểm DNS sẵn sàng hay thứ tự khởi
+động — kể cả khi seed trỏ vào một Pod. Đây là cách phòng ngừa đúng gốc; đổi `SEEDS`
+sang Service FQDN vẫn nên giữ như một lớp bền vững bổ sung.
 ```
