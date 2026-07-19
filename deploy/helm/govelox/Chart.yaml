@@ -11,21 +11,24 @@ appVersion: "1.0.0"
 keywords: [rate-limiter, grpc, gossip, redis, etcd]
 home: https://github.com/Vyzz1/go-velox
 
-# For production, disable devInfra and instead declare the real data stores as
-# dependencies, e.g.:
+# Real data stores for production, enabled via values (default off → devInfra used
+# for demos). Run `helm dependency build` before installing with these enabled.
 #
-# dependencies:
-#   - name: redis-cluster
-#     version: "~11"
-#     repository: https://charts.bitnami.com/bitnami
-#     condition: redis-cluster.enabled
-#   - name: postgresql
-#     version: "~16"
-#     repository: https://charts.bitnami.com/bitnami
-#     condition: postgresql.enabled
-#   - name: etcd
-#     version: "~10"
-#     repository: https://charts.bitnami.com/bitnami
-#     condition: etcd.enabled
-#
-# Then run `helm dependency update` before installing.
+# NOTE: Bitnami moved its free images to the `bitnamilegacy` repo in 2025 (frozen,
+# no security updates); the chart's default `bitnami/*` images no longer pull. The
+# values.yaml overrides image.repository to bitnamilegacy and sets
+# global.security.allowInsecureImages. Long term, migrate to a Redis operator or
+# Bitnami Secure Images.
+dependencies:
+  - name: redis-cluster
+    version: "13.0.4"
+    repository: oci://registry-1.docker.io/bitnamicharts
+    condition: redis-cluster.enabled
+  - name: postgresql
+    version: "18.8.0"
+    repository: oci://registry-1.docker.io/bitnamicharts
+    condition: postgresql.enabled
+  - name: etcd
+    version: "12.0.18"
+    repository: oci://registry-1.docker.io/bitnamicharts
+    condition: etcd.enabled

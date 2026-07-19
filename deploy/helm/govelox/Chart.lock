@@ -1,0 +1,12 @@
+dependencies:
+- name: redis-cluster
+  repository: oci://registry-1.docker.io/bitnamicharts
+  version: 13.0.4
+- name: postgresql
+  repository: oci://registry-1.docker.io/bitnamicharts
+  version: 18.8.0
+- name: etcd
+  repository: oci://registry-1.docker.io/bitnamicharts
+  version: 12.0.18
+digest: sha256:7299cdf370d253fbd4a94e3a9ddb94e5ed562280be49a6e27c5564ef07dc6f07
+generated: "2026-07-19T15:32:29.4010329+07:00"

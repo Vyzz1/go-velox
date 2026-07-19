@@ -28,6 +28,23 @@
 {{- printf "%s.%s.svc.cluster.local" (include "govelox.engine.fullname" .) .Release.Namespace -}}
 {{- end -}}
 
+{{/*
+REDIS_ADDRS for the engine. When the Bitnami redis-cluster subchart is enabled,
+return THREE seed nodes via its headless Service — go-redis NewUniversalClient
+only selects a ClusterClient when given >1 address (one address = standalone
+client, which breaks against a cluster). ClusterClient discovers the rest of the
+6 nodes from these seeds. Otherwise fall back to the plain redis.addrs value.
+*/}}
+{{- define "govelox.redisAddrs" -}}
+{{- $rc := index .Values "redis-cluster" -}}
+{{- if $rc.enabled -}}
+{{- $ns := .Release.Namespace -}}
+{{- printf "redis-cluster-0.redis-cluster-headless.%s.svc.cluster.local:6379,redis-cluster-1.redis-cluster-headless.%s.svc.cluster.local:6379,redis-cluster-2.redis-cluster-headless.%s.svc.cluster.local:6379" $ns $ns $ns -}}
+{{- else -}}
+{{- .Values.redis.addrs -}}
+{{- end -}}
+{{- end -}}
+
 {{/* Common metadata labels. */}}
 {{- define "govelox.labels" -}}
 app.kubernetes.io/name: {{ include "govelox.name" . }}

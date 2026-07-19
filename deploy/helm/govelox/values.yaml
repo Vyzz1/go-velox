@@ -53,8 +53,23 @@ config:
 redis:
   addrs: "redis-cluster:6379"
 etcd:
+  # App connection config (read by the engine + config-service templates).
   endpoints: "etcd:2379"
   prefix: "/velox/rules/"
+  # Bitnami etcd subchart config (same key because the subchart is named "etcd";
+  # the keys below don't overlap with endpoints/prefix). Off by default → devInfra
+  # etcd is used. Enable for a real etcd; RBAC is disabled so the no-auth client
+  # works, and the Service name is fixed to "etcd" to match endpoints above.
+  enabled: false
+  fullnameOverride: etcd
+  auth:
+    rbac:
+      create: false
+  persistence:
+    enabled: false
+  image:
+    registry: docker.io
+    repository: bitnamilegacy/etcd
 postgres:
   url: "postgres://velox:velox@postgres:5432/velox?sslmode=disable"
 otlp:
@@ -63,6 +78,69 @@ otlp:
 # ── Bundled throwaway infra (demos only — DISABLE in production) ──────────────
 # A single standalone Redis (the engine's go-redis UniversalClient treats one
 # address as a non-cluster client), a single etcd, and Postgres with the schema
-# ConfigMap. Not highly-available and not persistent.
+# ConfigMap. Not highly-available and not persistent. When redis-cluster.enabled
+# below is true, the devInfra Redis is skipped automatically (the real cluster
+# replaces it) and REDIS_ADDRS is pointed at the cluster's seed nodes.
 devInfra:
   enabled: true
+
+# Propagated to subcharts. Bitnami rejects non-official image repos unless this
+# is set — required because we pull the moved `bitnamilegacy` images (see below).
+global:
+  security:
+    allowInsecureImages: true
+
+# ── Real Redis Cluster via Bitnami subchart (Phase 3 C1) ──────────────────────
+# Off by default (demos use the devInfra standalone Redis). Enable for a genuine
+# 6-node cluster (3 masters + 3 replicas). Requires `helm dependency build` first.
+#
+# CAVEAT: Bitnami moved its free images to the `bitnamilegacy` repo in 2025 —
+# frozen, no security updates. The default `bitnami/redis-cluster` tag no longer
+# pulls, so image.repository is overridden to bitnamilegacy. Long term, move to a
+# Redis operator or Bitnami Secure Images.
+redis-cluster:
+  enabled: false
+  fullnameOverride: redis-cluster   # stable Service name → REDIS_ADDRS is predictable
+  usePassword: false                # the engine's client sends no password
+  persistence:
+    enabled: false                  # throwaway; set true + a storageClass for real use
+  cluster:
+    nodes: 6
+    replicas: 1                     # 3 masters + 3 replicas
+  image:
+    registry: docker.io
+    repository: bitnamilegacy/redis-cluster
+
+# ── Real Postgres via Bitnami subchart (Phase 3 C1-extra) ─────────────────────
+# Off by default (demos use devInfra Postgres). fullnameOverride=postgres +
+# these credentials keep postgres.url above valid unchanged. The rules schema is
+# loaded via primary.initdb.scripts (config-service uses sqlc and does not create
+# tables at runtime). Same bitnamilegacy image caveat as redis-cluster.
+postgresql:
+  enabled: false
+  fullnameOverride: postgres
+  auth:
+    username: velox
+    password: velox
+    database: velox
+    postgresPassword: velox
+  primary:
+    persistence:
+      enabled: false
+    initdb:
+      scripts:
+        schema.sql: |
+          CREATE TABLE IF NOT EXISTS rules (
+              tenant_id   TEXT        NOT NULL,
+              rule_id     TEXT        NOT NULL,
+              algorithm   TEXT        NOT NULL DEFAULT 'gcra',
+              limit_count BIGINT      NOT NULL,
+              period_secs BIGINT      NOT NULL,
+              burst       BIGINT      NOT NULL DEFAULT 0,
+              created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+              updated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+              PRIMARY KEY (tenant_id, rule_id)
+          );
+  image:
+    registry: docker.io
+    repository: bitnamilegacy/postgresql
