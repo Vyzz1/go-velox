@@ -1,0 +1,33 @@
+{{- if .Values.gateway.pdb.enabled }}
+# Cap voluntary disruptions of the (multi-replica, stateless) gateway so a node
+# drain or rollout never takes the whole tier down at once.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "govelox.gateway.fullname" . }}
+  labels:
+    {{- include "govelox.labels" . | nindent 4 }}
+    app.kubernetes.io/component: gateway
+spec:
+  maxUnavailable: {{ .Values.gateway.pdb.maxUnavailable }}
+  selector:
+    matchLabels:
+      app: {{ include "govelox.gateway.fullname" . }}
+{{- end }}
+{{- if .Values.engine.pdb.enabled }}
+---
+# Keep at least (replicas - maxUnavailable) engines up during drains/rollouts so
+# the fleet and gossip stay healthy.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "govelox.engine.fullname" . }}
+  labels:
+    {{- include "govelox.labels" . | nindent 4 }}
+    app.kubernetes.io/component: engine
+spec:
+  maxUnavailable: {{ .Values.engine.pdb.maxUnavailable }}
+  selector:
+    matchLabels:
+      app: {{ include "govelox.engine.fullname" . }}
+{{- end }}

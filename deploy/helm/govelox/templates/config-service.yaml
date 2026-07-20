@@ -34,8 +34,13 @@ spec:
             - { name: HTTP_ADDR,    value: ":{{ .Values.config.httpPort }}" }
             - { name: METRICS_ADDR, value: ":{{ .Values.config.metricsPort }}" }
             - { name: OTLP_ENDPOINT, value: {{ .Values.otlp.endpoint | quote }} }
-            # In production, source DATABASE_URL from a Secret instead of a value.
-            - { name: DATABASE_URL,   value: {{ .Values.postgres.url | quote }} }
+            # Injected from a Secret (chart-created from postgres.url, or an
+            # externally-managed config.existingSecret). See config-secret.yaml.
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.config.existingSecret | default (include "govelox.config.fullname" .) }}
+                  key: {{ .Values.config.secretKey }}
             - { name: ETCD_ENDPOINTS, value: {{ .Values.etcd.endpoints | quote }} }
             - { name: ETCD_PREFIX,    value: {{ .Values.etcd.prefix | quote }} }
           readinessProbe:

@@ -1,0 +1,82 @@
+# Production overrides for the govelox chart: real Bitnami data stores with
+# persistence + HA sizing, instead of the bundled throwaway devInfra.
+#
+# Usage:
+#   helm dependency build ./deploy/helm/govelox      # fetch subcharts first
+#   helm install velox ./deploy/helm/govelox -f deploy/helm/govelox/values-prod.yaml
+#
+# CAVEATS (see values.yaml / Chart.yaml):
+#   - The Bitnami subchart images pull from the frozen `bitnamilegacy` repo (no
+#     security updates). For real production, move to a Redis operator /
+#     CloudNativePG / Bitnami Secure Images.
+#   - DATABASE_URL is injected from a Secret. The chart creates one from
+#     postgres.url by default; for real production set config.existingSecret to a
+#     Secret managed outside the chart (see the config block below) so credentials
+#     never live in values.yaml.
+#   - Persistence requires a StorageClass that provisions PVs in your cluster.
+
+# Turn off the bundled throwaway infra; use the real backends below.
+devInfra:
+  enabled: false
+
+# Never :latest in production — pin an immutable tag pushed to your registry.
+image:
+  tag: latest            # TODO: replace with a versioned tag, e.g. "1.0.0"
+  pullPolicy: IfNotPresent
+# Point each service image at your registry, e.g.:
+# engine:  { image: registry.example.com/govelox/limiter-engine }
+# gateway: { image: registry.example.com/govelox/api-gateway }
+# config:  { image: registry.example.com/govelox/config-service }
+
+# ── App sizing ────────────────────────────────────────────────────────────────
+gateway:
+  replicas: 3
+  serviceType: LoadBalancer     # or keep ClusterIP and front it with an Ingress (C2)
+  resources:
+    requests: { cpu: 100m, memory: 128Mi }
+    limits:   { cpu: 500m, memory: 256Mi }
+
+engine:
+  replicas: 3
+  podAntiAffinity: true         # spread the fleet across nodes for real failover
+  resources:
+    requests: { cpu: 250m, memory: 256Mi }
+    limits:   { cpu: "1",  memory: 512Mi }
+
+config:
+  replicas: 1                   # single writer of the source of truth
+  # Reference a Secret managed outside the chart instead of generating one from
+  # postgres.url (recommended for prod). The Secret must hold the URL under the
+  # key below (default DATABASE_URL).
+  # existingSecret: velox-db-credentials
+  resources:
+    requests: { cpu: 100m, memory: 128Mi }
+    limits:   { cpu: 500m, memory: 256Mi }
+
+# ── Real data stores (Bitnami subcharts) ─────────────────────────────────────
+redis-cluster:
+  enabled: true
+  persistence:
+    enabled: true
+    size: 8Gi
+    # storageClass: "your-storage-class"
+
+postgresql:
+  enabled: true
+  primary:
+    persistence:
+      enabled: true
+      size: 8Gi
+      # storageClass: "your-storage-class"
+  # For HA, switch to architecture: replication + readReplicas, or use an
+  # operator like CloudNativePG instead of this single-primary setup.
+
+etcd:
+  enabled: true
+  replicaCount: 3               # 3-member quorum for HA (demo used 1)
+  persistence:
+    enabled: true
+    size: 8Gi
+    # storageClass: "your-storage-class"
+  # The app talks to the single `etcd:2379` client Service; for stricter watch
+  # semantics you can instead list all member endpoints in etcd.endpoints.

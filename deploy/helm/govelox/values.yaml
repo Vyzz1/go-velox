@@ -23,7 +23,14 @@ engine:
     limit: 100
     periodSecs: 60
     burst: 10
-  resources: {}
+  resources:
+    requests: { cpu: 100m, memory: 128Mi }
+    limits:   { cpu: 500m, memory: 256Mi }
+  # Keep at most 1 engine down during voluntary disruptions (node drain, rollout)
+  # so the fleet + gossip stay healthy. Needs replicas > 1 to be meaningful.
+  pdb:
+    enabled: true
+    maxUnavailable: 1
   # Spread the engine Pods across nodes for node-level failover. Ignored on a
   # single-node cluster (preferred, not required).
   podAntiAffinity: true
@@ -36,7 +43,12 @@ gateway:
   metricsPort: 8090
   # Empty → chart points it at the in-cluster membership Service.
   serviceType: ClusterIP
-  resources: {}
+  resources:
+    requests: { cpu: 50m,  memory: 64Mi }
+    limits:   { cpu: 250m, memory: 128Mi }
+  pdb:
+    enabled: true
+    maxUnavailable: 1
 
 # ── config-service (Deployment) ──────────────────────────────────────────────
 config:
@@ -45,7 +57,17 @@ config:
   httpPort: 8081
   metricsPort: 8082
   serviceType: ClusterIP
-  resources: {}
+  resources:
+    requests: { cpu: 50m,  memory: 64Mi }
+    limits:   { cpu: 250m, memory: 128Mi }
+  # No PodDisruptionBudget: config-service is a single replica (the source-of-truth
+  # writer), so a PDB would block node drains rather than protect availability.
+  # DATABASE_URL is injected from a Secret, not a plain env value. By default the
+  # chart creates a Secret from postgres.url. For production, set existingSecret to
+  # the name of an externally-managed Secret (sealed-secrets / external-secrets /
+  # vault) holding the URL under secretKey — then postgres.url is ignored.
+  existingSecret: ""
+  secretKey: DATABASE_URL
 
 # ── External backend endpoints ───────────────────────────────────────────────
 # Defaults match the devInfra Service names below. Point these at real
