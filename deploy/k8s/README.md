@@ -70,8 +70,11 @@ kubectl -n velox delete pod velox-engine-1
 # StatefulSet recreates velox-engine-1 it rejoins under the SAME name/DNS.
 ```
 
-## Phase 2
+## Phase 2+ — Helm chart
 
-Once the above passes, template these three files into one umbrella Helm chart:
-`values.yaml` for the 4 app services + `Chart.yaml` `dependencies:` pulling the
-Redis/Postgres/etcd charts above.
+These raw manifests are the reference for the umbrella Helm chart in
+[`../helm/govelox`](../helm/govelox), which templates the same topology and adds
+production concerns (Secret-sourced credentials, PodDisruptionBudgets,
+NetworkPolicies, Ingress, HPA autoscaling, Prometheus ServiceMonitors, and real
+Bitnami Redis Cluster / Postgres / etcd subcharts). Prefer the chart for anything
+beyond understanding the primitives; see its [README](../helm/govelox/README.md).

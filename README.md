@@ -88,9 +88,12 @@ go-velox/
 ├── proto/
 │   ├── ratelimit.proto
 │   └── engine.proto
-└── infra/
-    ├── prometheus/
-    └── grafana/
+├── infra/
+│   ├── prometheus/
+│   └── grafana/
+└── deploy/
+    ├── k8s/        # raw Kubernetes manifests (reference / learning)
+    └── helm/       # umbrella Helm chart (production)
 ```
 
 ## Getting Started
@@ -184,6 +187,31 @@ make dev
 - runs any service with an existing `cmd/<service>/main.go`
 - skips missing services cleanly
 - writes logs to `.tmp/dev/*.log`
+
+## Deployment (Kubernetes)
+
+Beyond `docker-compose` (local dev), the platform ships two Kubernetes paths under
+[`deploy/`](deploy):
+
+- **[`deploy/k8s`](deploy/k8s)** — hand-written manifests plus a runbook, kept as
+  the reference for the tricky parts (engine + sync-agent sidecar StatefulSet,
+  headless Service for gossip, membership Service, gossip-join DNS handling).
+- **[`deploy/helm/govelox`](deploy/helm/govelox)** — the umbrella Helm chart for
+  real deployments. Lightweight bundled infra by default; a
+  [`values-prod.yaml`](deploy/helm/govelox/values-prod.yaml) overlay switches on
+  real Bitnami Redis Cluster / Postgres / etcd plus Secret-sourced credentials,
+  PodDisruptionBudgets, NetworkPolicies, Ingress, HPA autoscaling, and Prometheus
+  ServiceMonitors — each behind a toggle. See the chart
+  [README](deploy/helm/govelox/README.md).
+
+```bash
+# demo (bundled infra)
+helm install velox ./deploy/helm/govelox -n velox --create-namespace
+# production (real backends + hardening)
+helm dependency build ./deploy/helm/govelox
+helm install velox ./deploy/helm/govelox -n velox --create-namespace \
+  -f ./deploy/helm/govelox/values-prod.yaml
+```
 
 ## Current Status
 
