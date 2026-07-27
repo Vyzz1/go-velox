@@ -97,6 +97,18 @@ postgres:
 otlp:
   endpoint: "jaeger:4317"
 
+# ── NetworkPolicy (Phase 3 B3) ───────────────────────────────────────────────
+# Per-component ingress allow-lists for the app tier (engine / gateway / config).
+# No namespace-wide default-deny: only the selected app Pods are restricted; the
+# data stores stay reachable (lock those with the Bitnami subcharts' own
+# networkPolicy.enabled instead). Requires a CNI that enforces NetworkPolicy
+# (Calico/Cilium) — a no-op on CNIs that don't (e.g. Docker Desktop).
+networkPolicy:
+  enabled: false
+  # Namespace allowed to scrape /metrics (matched by the built-in
+  # kubernetes.io/metadata.name label). Set to where Prometheus runs.
+  monitoringNamespace: monitoring
+
 # ── Bundled throwaway infra (demos only — DISABLE in production) ──────────────
 # A single standalone Redis (the engine's go-redis UniversalClient treats one
 # address as a non-cluster client), a single etcd, and Postgres with the schema

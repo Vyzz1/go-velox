@@ -1,0 +1,93 @@
+{{- if .Values.networkPolicy.enabled }}
+{{- $mon := .Values.networkPolicy.monitoringNamespace }}
+# ─────────────────────────────────────────────────────────────────────────────
+# Per-component ingress allow-lists. A NetworkPolicy that selects a Pod makes
+# that Pod deny-by-default for ingress, permitting only the rules below. Pods not
+# selected here (the data stores) are left open — lock them with the Bitnami
+# subcharts' own networkPolicy.enabled. Egress is unrestricted (DNS + backends).
+# ─────────────────────────────────────────────────────────────────────────────
+# limiter-engine: gRPC + membership from the gateway, gossip from peer engines,
+# /metrics from the monitoring namespace.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "govelox.engine.fullname" . }}
+  labels:
+    {{- include "govelox.labels" . | nindent 4 }}
+    app.kubernetes.io/component: engine
+spec:
+  podSelector:
+    matchLabels:
+      app: {{ include "govelox.engine.fullname" . }}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: {{ include "govelox.gateway.fullname" . }}
+      ports:
+        - { port: {{ .Values.engine.grpcPort }},        protocol: TCP }
+        - { port: {{ .Values.engine.sidecarHTTPPort }}, protocol: TCP }
+    - from:
+        - podSelector:
+            matchLabels:
+              app: {{ include "govelox.engine.fullname" . }}
+      ports:
+        - { port: {{ .Values.engine.gossipPort }}, protocol: TCP }
+        - { port: {{ .Values.engine.gossipPort }}, protocol: UDP }
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              "kubernetes.io/metadata.name": {{ $mon | quote }}
+      ports:
+        - { port: {{ .Values.engine.metricsPort }},        protocol: TCP }
+        - { port: {{ .Values.engine.sidecarMetricsPort }}, protocol: TCP }
+---
+# api-gateway: HTTP from anywhere (external entry via Ingress/LB), /metrics from
+# the monitoring namespace.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "govelox.gateway.fullname" . }}
+  labels:
+    {{- include "govelox.labels" . | nindent 4 }}
+    app.kubernetes.io/component: gateway
+spec:
+  podSelector:
+    matchLabels:
+      app: {{ include "govelox.gateway.fullname" . }}
+  policyTypes: [Ingress]
+  ingress:
+    - ports:
+        - { port: {{ .Values.gateway.httpPort }}, protocol: TCP }
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              "kubernetes.io/metadata.name": {{ $mon | quote }}
+      ports:
+        - { port: {{ .Values.gateway.metricsPort }}, protocol: TCP }
+---
+# config-service: REST admin API + /metrics from monitoring. Tighten the API
+# source in real production (e.g. only an admin namespace or the Ingress).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "govelox.config.fullname" . }}
+  labels:
+    {{- include "govelox.labels" . | nindent 4 }}
+    app.kubernetes.io/component: config
+spec:
+  podSelector:
+    matchLabels:
+      app: {{ include "govelox.config.fullname" . }}
+  policyTypes: [Ingress]
+  ingress:
+    - ports:
+        - { port: {{ .Values.config.httpPort }}, protocol: TCP }
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              "kubernetes.io/metadata.name": {{ $mon | quote }}
+      ports:
+        - { port: {{ .Values.config.metricsPort }}, protocol: TCP }
+{{- end }}

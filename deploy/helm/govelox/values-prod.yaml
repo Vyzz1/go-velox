@@ -53,7 +53,14 @@ config:
     requests: { cpu: 100m, memory: 128Mi }
     limits:   { cpu: 500m, memory: 256Mi }
 
+# Lock down the app tier (needs a CNI that enforces NetworkPolicy — Calico/Cilium).
+networkPolicy:
+  enabled: true
+  monitoringNamespace: monitoring   # set to where your Prometheus runs
+
 # ── Real data stores (Bitnami subcharts) ─────────────────────────────────────
+# To also lock down the data stores, enable each subchart's own networkPolicy
+# (they know their own Pod labels), e.g. redis-cluster.networkPolicy.enabled=true.
 redis-cluster:
   enabled: true
   persistence:
