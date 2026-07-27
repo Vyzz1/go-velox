@@ -12,7 +12,9 @@ metadata:
     app.kubernetes.io/component: engine
 spec:
   serviceName: {{ $engine }}          # must match the headless Service below
+  {{- if not .Values.engine.autoscaling.enabled }}
   replicas: {{ .Values.engine.replicas }}
+  {{- end }}
   selector:
     matchLabels:
       app: {{ $engine }}
@@ -113,6 +115,8 @@ spec:
     - { name: gossip-tcp, port: {{ .Values.engine.gossipPort }}, protocol: TCP }
     - { name: gossip-udp, port: {{ .Values.engine.gossipPort }}, protocol: UDP }
     - { name: members,    port: {{ .Values.engine.sidecarHTTPPort }}, protocol: TCP }
+    - { name: metrics,    port: {{ .Values.engine.metricsPort }},        targetPort: metrics,    protocol: TCP }
+    - { name: sa-metrics, port: {{ .Values.engine.sidecarMetricsPort }}, targetPort: sa-metrics, protocol: TCP }
 ---
 # Membership Service: ClusterIP (DOES load-balance) so the gateway's poll spreads
 # across all sidecars — no single-sidecar SPOF.

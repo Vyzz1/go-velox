@@ -1,0 +1,55 @@
+{{- if .Values.serviceMonitor.enabled }}
+{{- $interval := .Values.serviceMonitor.interval }}
+{{- $extra := .Values.serviceMonitor.additionalLabels }}
+# ServiceMonitors for the Prometheus Operator. Each selects a component's Service
+# (by instance + component labels) and scrapes its /metrics port. The engine
+# Service carries two metrics ports (engine + sync-agent sidecar).
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "govelox.gateway.fullname" . }}
+  labels:
+    {{- include "govelox.labels" . | nindent 4 }}
+    app.kubernetes.io/component: gateway
+    {{- with $extra }}{{ toYaml . | nindent 4 }}{{- end }}
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: gateway
+  endpoints:
+    - { port: metrics, path: /metrics, interval: {{ $interval }} }
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "govelox.config.fullname" . }}
+  labels:
+    {{- include "govelox.labels" . | nindent 4 }}
+    app.kubernetes.io/component: config
+    {{- with $extra }}{{ toYaml . | nindent 4 }}{{- end }}
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: config
+  endpoints:
+    - { port: metrics, path: /metrics, interval: {{ $interval }} }
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "govelox.engine.fullname" . }}
+  labels:
+    {{- include "govelox.labels" . | nindent 4 }}
+    app.kubernetes.io/component: engine
+    {{- with $extra }}{{ toYaml . | nindent 4 }}{{- end }}
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: engine
+  endpoints:
+    - { port: metrics,    path: /metrics, interval: {{ $interval }} }
+    - { port: sa-metrics, path: /metrics, interval: {{ $interval }} }
+{{- end }}

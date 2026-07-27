@@ -8,7 +8,9 @@ metadata:
     {{- include "govelox.labels" . | nindent 4 }}
     app.kubernetes.io/component: gateway
 spec:
+  {{- if not .Values.gateway.autoscaling.enabled }}
   replicas: {{ .Values.gateway.replicas }}
+  {{- end }}
   selector:
     matchLabels:
       app: {{ $gw }}
@@ -57,4 +59,5 @@ spec:
   selector:
     app: {{ $gw }}
   ports:
-    - { name: http, port: {{ .Values.gateway.httpPort }}, targetPort: http, protocol: TCP }
+    - { name: http,    port: {{ .Values.gateway.httpPort }},    targetPort: http,    protocol: TCP }
+    - { name: metrics, port: {{ .Values.gateway.metricsPort }}, targetPort: metrics, protocol: TCP }

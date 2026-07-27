@@ -1,0 +1,51 @@
+{{- if .Values.gateway.autoscaling.enabled }}
+# Scale the (stateless) gateway on CPU. Requires metrics-server + gateway CPU
+# requests (set in values). The Deployment omits replicas so the HPA owns it.
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "govelox.gateway.fullname" . }}
+  labels:
+    {{- include "govelox.labels" . | nindent 4 }}
+    app.kubernetes.io/component: gateway
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "govelox.gateway.fullname" . }}
+  minReplicas: {{ .Values.gateway.autoscaling.minReplicas }}
+  maxReplicas: {{ .Values.gateway.autoscaling.maxReplicas }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.gateway.autoscaling.targetCPUUtilizationPercentage }}
+{{- end }}
+{{- if .Values.engine.autoscaling.enabled }}
+---
+# Scale the engine StatefulSet on CPU. Engines are stateless (Redis holds the
+# counters); new Pods join gossip and the gateway ring picks them up.
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "govelox.engine.fullname" . }}
+  labels:
+    {{- include "govelox.labels" . | nindent 4 }}
+    app.kubernetes.io/component: engine
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: StatefulSet
+    name: {{ include "govelox.engine.fullname" . }}
+  minReplicas: {{ .Values.engine.autoscaling.minReplicas }}
+  maxReplicas: {{ .Values.engine.autoscaling.maxReplicas }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.engine.autoscaling.targetCPUUtilizationPercentage }}
+{{- end }}

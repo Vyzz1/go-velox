@@ -65,4 +65,5 @@ spec:
   selector:
     app: {{ $cfg }}
   ports:
-    - { name: http, port: {{ .Values.config.httpPort }}, targetPort: http, protocol: TCP }
+    - { name: http,    port: {{ .Values.config.httpPort }},    targetPort: http,    protocol: TCP }
+    - { name: metrics, port: {{ .Values.config.metricsPort }}, targetPort: metrics, protocol: TCP }

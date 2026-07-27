@@ -34,6 +34,14 @@ engine:
   # Spread the engine Pods across nodes for node-level failover. Ignored on a
   # single-node cluster (preferred, not required).
   podAntiAffinity: true
+  # CPU-based autoscaling of the StatefulSet. Safe because engines are stateless
+  # (Redis holds the counters); new Pods join gossip and the gateway ring picks
+  # them up. When enabled, replicas above is ignored (the HPA owns it).
+  autoscaling:
+    enabled: false
+    minReplicas: 3
+    maxReplicas: 9
+    targetCPUUtilizationPercentage: 70
 
 # ── api-gateway (Deployment) ─────────────────────────────────────────────────
 gateway:
@@ -49,6 +57,13 @@ gateway:
   pdb:
     enabled: true
     maxUnavailable: 1
+  # CPU-based autoscaling (needs metrics-server + the resource requests above).
+  # When enabled, replicas above is ignored (the HPA owns the replica count).
+  autoscaling:
+    enabled: false
+    minReplicas: 2
+    maxReplicas: 6
+    targetCPUUtilizationPercentage: 70
 
 # ── config-service (Deployment) ──────────────────────────────────────────────
 config:
@@ -108,6 +123,34 @@ networkPolicy:
   # Namespace allowed to scrape /metrics (matched by the built-in
   # kubernetes.io/metadata.name label). Set to where Prometheus runs.
   monitoringNamespace: monitoring
+
+# ── Ingress for the gateway (Phase 3 C2) ─────────────────────────────────────
+# L7 entry for the gateway's REST API (POST /v1/check). Requires an ingress
+# controller in the cluster (ingress-nginx / Traefik). Routes host→gateway Service.
+ingress:
+  enabled: false
+  className: nginx
+  host: api.velox.local
+  path: /
+  pathType: Prefix
+  annotations: {}
+  # TLS: supply a Secret with the cert (or use cert-manager via annotations), e.g.
+  # tls:
+  #   - secretName: velox-tls
+  #     hosts: [api.velox.local]
+  tls: []
+
+# ── Prometheus ServiceMonitors (Phase 3 D1) ──────────────────────────────────
+# Tell a Prometheus Operator to scrape each service's /metrics. Requires the
+# monitoring.coreos.com CRDs (kube-prometheus-stack). The observability BACKENDS
+# (Prometheus / Grafana / Jaeger) are platform-level and deployed separately —
+# NOT bundled here; the chart only declares itself as a scrape target.
+serviceMonitor:
+  enabled: false
+  interval: 15s
+  # Extra labels so the Prometheus Operator's serviceMonitorSelector picks these
+  # up (kube-prometheus-stack usually needs release: <stack-release>).
+  additionalLabels: {}
 
 # ── Bundled throwaway infra (demos only — DISABLE in production) ──────────────
 # A single standalone Redis (the engine's go-redis UniversalClient treats one

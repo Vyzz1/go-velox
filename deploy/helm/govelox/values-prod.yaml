@@ -31,10 +31,15 @@ image:
 # ── App sizing ────────────────────────────────────────────────────────────────
 gateway:
   replicas: 3
-  serviceType: LoadBalancer     # or keep ClusterIP and front it with an Ingress (C2)
+  serviceType: ClusterIP        # fronted by the Ingress below (C2)
   resources:
     requests: { cpu: 100m, memory: 128Mi }
     limits:   { cpu: 500m, memory: 256Mi }
+  autoscaling:
+    enabled: true
+    minReplicas: 3
+    maxReplicas: 12
+    targetCPUUtilizationPercentage: 70
 
 engine:
   replicas: 3
@@ -42,6 +47,11 @@ engine:
   resources:
     requests: { cpu: 250m, memory: 256Mi }
     limits:   { cpu: "1",  memory: 512Mi }
+  autoscaling:
+    enabled: true
+    minReplicas: 3
+    maxReplicas: 9
+    targetCPUUtilizationPercentage: 70
 
 config:
   replicas: 1                   # single writer of the source of truth
@@ -57,6 +67,24 @@ config:
 networkPolicy:
   enabled: true
   monitoringNamespace: monitoring   # set to where your Prometheus runs
+
+# Public L7 entry for the gateway (needs an ingress controller). With Ingress on,
+# set gateway.serviceType back to ClusterIP in the gateway block above.
+ingress:
+  enabled: true
+  className: nginx
+  host: api.velox.example.com       # set to your real domain
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod   # if using cert-manager
+  tls:
+    - secretName: velox-tls
+      hosts: [api.velox.example.com]
+
+# Expose /metrics to the Prometheus Operator (needs kube-prometheus-stack CRDs).
+serviceMonitor:
+  enabled: true
+  additionalLabels:
+    release: kube-prometheus-stack   # match your Prometheus serviceMonitorSelector
 
 # ── Real data stores (Bitnami subcharts) ─────────────────────────────────────
 # To also lock down the data stores, enable each subchart's own networkPolicy

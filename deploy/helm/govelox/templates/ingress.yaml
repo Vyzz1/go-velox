@@ -1,0 +1,36 @@
+{{- if .Values.ingress.enabled }}
+# L7 entry for the gateway REST API. The ingress controller routes
+# host -> gateway Service :{{ .Values.gateway.httpPort }}. With networkPolicy
+# enabled the gateway already accepts :{{ .Values.gateway.httpPort }} from any
+# source, so the controller can reach it.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "govelox.gateway.fullname" . }}
+  labels:
+    {{- include "govelox.labels" . | nindent 4 }}
+    app.kubernetes.io/component: gateway
+  {{- with .Values.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- with .Values.ingress.className }}
+  ingressClassName: {{ . }}
+  {{- end }}
+  {{- with .Values.ingress.tls }}
+  tls:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  rules:
+    - host: {{ .Values.ingress.host | quote }}
+      http:
+        paths:
+          - path: {{ .Values.ingress.path }}
+            pathType: {{ .Values.ingress.pathType }}
+            backend:
+              service:
+                name: {{ include "govelox.gateway.fullname" . }}
+                port:
+                  number: {{ .Values.gateway.httpPort }}
+{{- end }}
