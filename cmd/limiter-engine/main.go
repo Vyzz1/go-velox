@@ -39,6 +39,8 @@ type Config struct {
 	DefaultLimit      uint64 `env:"LIMITER_DEFAULT_LIMIT"        envDefault:"100"`
 	DefaultPeriodSecs int64  `env:"LIMITER_DEFAULT_PERIOD_SECS"  envDefault:"60"`
 	DefaultBurst      uint64 `env:"LIMITER_DEFAULT_BURST"        envDefault:"10"`
+	// FailMode: "open" (allow) or "closed" (deny) when Redis is unreachable.
+	FailMode string `env:"LIMITER_FAIL_MODE" envDefault:"open"`
 }
 
 func main() {
@@ -56,6 +58,7 @@ func main() {
 		zap.String("grpc", cfg.GRPCAddr),
 		zap.String("metrics", cfg.MetricsAddr),
 		zap.String("otlp", cfg.OTLPEndpoint),
+		zap.String("fail_mode", cfg.FailMode),
 	)
 
 	ctx := context.Background()
@@ -98,7 +101,7 @@ func main() {
 	}
 	defer ruleProvider.Close()
 
-	checkLimitUC := usecase.NewCheckLimit(redisStore, ruleProvider)
+	checkLimitUC := usecase.NewCheckLimit(redisStore, ruleProvider, usecase.ParseFailMode(cfg.FailMode))
 	healthUC := usecase.NewHealth(redisStore)
 	srv := grpchandler.NewServer(checkLimitUC, healthUC, log)
 

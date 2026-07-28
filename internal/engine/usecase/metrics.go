@@ -30,10 +30,22 @@ var (
 		Name:      "redis_errors_total",
 		Help:      "Total number of Redis errors during rate limit checks.",
 	})
+
+	degradedTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "velox",
+		Subsystem: "limiter",
+		Name:      "degraded_total",
+		Help:      "Checks that fell back to the fail-mode policy because the store was unreachable.",
+	}, []string{"mode"})
 )
 
 func recordCheck(ruleID string, allowed bool, dur time.Duration) {
 	a := strconv.FormatBool(allowed)
 	checksTotal.WithLabelValues(ruleID, a).Inc()
 	checkDuration.WithLabelValues(a).Observe(dur.Seconds())
+}
+
+// recordDegraded counts a fail-mode fallback ("open" or "closed").
+func recordDegraded(mode string) {
+	degradedTotal.WithLabelValues(mode).Inc()
 }

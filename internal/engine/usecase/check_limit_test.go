@@ -41,7 +41,7 @@ func sampleRule() domain.Rule {
 }
 
 func TestExecute_ResolveRuleError(t *testing.T) {
-	uc := NewCheckLimit(&fakeStore{}, fakeProvider{err: errors.New("no such rule")})
+	uc := NewCheckLimit(&fakeStore{}, fakeProvider{err: errors.New("no such rule")}, FailOpen)
 
 	_, err := uc.Execute(context.Background(), domain.CheckInput{TenantID: "acme", RuleID: "api"})
 	if err == nil {
@@ -51,7 +51,7 @@ func TestExecute_ResolveRuleError(t *testing.T) {
 
 func TestExecute_AllowedMapsResultAndParams(t *testing.T) {
 	store := &fakeStore{result: algorithm.Result{Allowed: true, Remaining: 7, ResetAtMs: 123}}
-	uc := NewCheckLimit(store, fakeProvider{rule: sampleRule()})
+	uc := NewCheckLimit(store, fakeProvider{rule: sampleRule()}, FailOpen)
 
 	got, err := uc.Execute(context.Background(), domain.CheckInput{TenantID: "acme", RuleID: "api", Cost: 3})
 	if err != nil {
@@ -71,7 +71,7 @@ func TestExecute_AllowedMapsResultAndParams(t *testing.T) {
 
 func TestExecute_DeniedReason(t *testing.T) {
 	store := &fakeStore{result: algorithm.Result{Allowed: false, RetryAfterMs: 1000}}
-	uc := NewCheckLimit(store, fakeProvider{rule: sampleRule()})
+	uc := NewCheckLimit(store, fakeProvider{rule: sampleRule()}, FailOpen)
 
 	got, err := uc.Execute(context.Background(), domain.CheckInput{TenantID: "acme", RuleID: "api"})
 	if err != nil {
@@ -82,11 +82,45 @@ func TestExecute_DeniedReason(t *testing.T) {
 	}
 }
 
-func TestExecute_StoreError(t *testing.T) {
+// When the store is unreachable, the use case must NOT surface an error (which
+// would become a 5xx); it applies the fail-mode and returns a clean decision.
+func TestExecute_StoreUnreachable_FailOpen(t *testing.T) {
 	store := &fakeStore{err: errors.New("redis down")}
-	uc := NewCheckLimit(store, fakeProvider{rule: sampleRule()})
+	uc := NewCheckLimit(store, fakeProvider{rule: sampleRule()}, FailOpen)
 
-	if _, err := uc.Execute(context.Background(), domain.CheckInput{TenantID: "acme", RuleID: "api"}); err == nil {
-		t.Fatal("expected error when store fails")
+	got, err := uc.Execute(context.Background(), domain.CheckInput{TenantID: "acme", RuleID: "api"})
+	if err != nil {
+		t.Fatalf("fail-open must not return an error, got %v", err)
+	}
+	if !got.Allowed || got.Reason != "degraded_fail_open" {
+		t.Errorf("got %+v, want allowed/\"degraded_fail_open\"", got)
+	}
+	if got.Limit != 100 {
+		t.Errorf("limit = %d, want 100", got.Limit)
+	}
+}
+
+func TestExecute_StoreUnreachable_FailClosed(t *testing.T) {
+	store := &fakeStore{err: errors.New("redis down")}
+	uc := NewCheckLimit(store, fakeProvider{rule: sampleRule()}, FailClosed)
+
+	got, err := uc.Execute(context.Background(), domain.CheckInput{TenantID: "acme", RuleID: "api"})
+	if err != nil {
+		t.Fatalf("fail-closed must not return an error, got %v", err)
+	}
+	if got.Allowed || got.Reason != "degraded_fail_closed" {
+		t.Errorf("got %+v, want denied/\"degraded_fail_closed\"", got)
+	}
+	if got.RetryAfterMs != degradedRetryAfterMs {
+		t.Errorf("retryAfterMs = %d, want %d", got.RetryAfterMs, degradedRetryAfterMs)
+	}
+}
+
+func TestParseFailMode(t *testing.T) {
+	cases := map[string]FailMode{"open": FailOpen, "closed": FailClosed, "CLOSED": FailClosed, "": FailOpen, "weird": FailOpen}
+	for in, want := range cases {
+		if got := ParseFailMode(in); got != want {
+			t.Errorf("ParseFailMode(%q) = %v, want %v", in, got, want)
+		}
 	}
 }

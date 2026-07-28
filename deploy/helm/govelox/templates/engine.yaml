@@ -57,6 +57,7 @@ spec:
             - { name: LIMITER_DEFAULT_LIMIT,       value: {{ .Values.engine.defaults.limit | quote }} }
             - { name: LIMITER_DEFAULT_PERIOD_SECS, value: {{ .Values.engine.defaults.periodSecs | quote }} }
             - { name: LIMITER_DEFAULT_BURST,       value: {{ .Values.engine.defaults.burst | quote }} }
+            - { name: LIMITER_FAIL_MODE,           value: {{ .Values.engine.failMode | quote }} }
           readinessProbe:
             httpGet: { path: /healthz, port: metrics }
             initialDelaySeconds: 3

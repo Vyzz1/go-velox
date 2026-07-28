@@ -23,6 +23,9 @@ engine:
     limit: 100
     periodSecs: 60
     burst: 10
+  # Policy when Redis is unreachable for a request: "open" (allow, availability-
+  # first) or "closed" (deny, protection-first). Returns a clean 200/429, not 5xx.
+  failMode: open
   resources:
     requests: { cpu: 100m, memory: 128Mi }
     limits:   { cpu: 500m, memory: 256Mi }

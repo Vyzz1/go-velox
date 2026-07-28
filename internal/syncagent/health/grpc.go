@@ -35,15 +35,16 @@ func NewEngineProbe(engineAddr string) (*EngineProbe, error) {
 	}, nil
 }
 
-// Probe calls the engine's HealthCheck RPC. It returns nil only when the engine
-// answers with status "ok"; a transport error or any other status is a failure.
+// Probe calls the engine's HealthCheck RPC. Only a transport failure (a dead or
+// hung engine that cannot answer) marks the engine unroutable. A "degraded"
+// status — the engine's Redis is unreachable — is deliberately NOT a drop
+// trigger: the engine still serves decisions via its configured fail-mode, and
+// dropping every engine during a shared-Redis outage would turn a graceful
+// degrade into a 502 storm. The degraded status remains observable in logs and
+// the engine's own metrics.
 func (p *EngineProbe) Probe(ctx context.Context) error {
-	resp, err := p.client.HealthCheck(ctx, &enginev1.HealthCheckRequest{})
-	if err != nil {
+	if _, err := p.client.HealthCheck(ctx, &enginev1.HealthCheckRequest{}); err != nil {
 		return fmt.Errorf("health rpc: %w", err)
-	}
-	if resp.Status != "ok" {
-		return fmt.Errorf("engine reported status %q", resp.Status)
 	}
 	return nil
 }
