@@ -37,6 +37,7 @@ spec:
             # Load-balanced across all sidecars.
             - { name: SYNC_AGENT_URL, value: "http://{{ include "govelox.membership.fullname" . }}:{{ .Values.engine.sidecarHTTPPort }}" }
             - { name: ENGINE_PORT, value: {{ .Values.engine.grpcPort | quote }} }
+            - { name: ROUTE_KEY,   value: {{ .Values.gateway.routeKey | quote }} }
           readinessProbe:
             httpGet: { path: /healthz, port: metrics }
             initialDelaySeconds: 3

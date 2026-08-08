@@ -26,6 +26,9 @@ type Config struct {
 	OTLPEndpoint string `env:"OTLP_ENDPOINT"   envDefault:"localhost:4317"`
 	SyncAgentURL string `env:"SYNC_AGENT_URL"  envDefault:"http://localhost:7072"`
 	EnginePort   string `env:"ENGINE_PORT"     envDefault:"9090"`
+	// RouteKey: "tenant" (sticky per tenant) or "tenant_subject" (spread a hot
+	// tenant across engines). Correct either way — Redis holds the counters.
+	RouteKey string `env:"ROUTE_KEY" envDefault:"tenant"`
 }
 
 func main() {
@@ -44,6 +47,7 @@ func main() {
 		zap.String("metrics", cfg.MetricsAddr),
 		zap.String("sync_agent", cfg.SyncAgentURL),
 		zap.String("engine_port", cfg.EnginePort),
+		zap.String("route_key", cfg.RouteKey),
 		zap.String("otlp", cfg.OTLPEndpoint),
 	)
 
@@ -71,7 +75,7 @@ func main() {
 	poller := client.NewSyncPoller(router, cfg.SyncAgentURL, 5*time.Second, log)
 	go poller.Start(ctx)
 
-	engine := client.New(router)
+	engine := client.New(router, client.ParseRouteMode(cfg.RouteKey))
 	checkUC := usecase.NewCheck(engine)
 	handler := httpdelivery.Router(checkUC, log)
 

@@ -248,7 +248,11 @@ Dừng vòng lặp traffic ở 3.2 (`Ctrl-C`).
 
 ## 4. Kiểm chứng load balancing (traffic trải ra 3 engine)
 
-> **Hiểu trước:** gateway route bằng **consistent hashing theo `tenant_id`** (`ring.LocateKey([]byte(tenantID))`), **không** round-robin từng request. ⇒ cùng 1 tenant **luôn** về cùng 1 engine (đúng thiết kế — counter ownership ổn định). Muốn thấy cả 3 engine nhận traffic, phải bắn **nhiều tenant khác nhau**.
+> **Hiểu trước:** gateway route bằng **consistent hashing**, **không** round-robin từng request. Khóa hash cấu hình qua `ROUTE_KEY`:
+> - `ROUTE_KEY=tenant` (mặc định): hash theo `tenant_id` ⇒ cùng 1 tenant **luôn** về cùng 1 engine. Muốn thấy cả 3 engine nhận traffic, phải bắn **nhiều tenant khác nhau**.
+> - `ROUTE_KEY=tenant_subject`: hash theo `tenant_id|subject` ⇒ một tenant nóng (nhiều `subject`) được **rải qua cả 3 engine**. An toàn vì counter nằm ở Redis (engine stateless → engine nào cũng ra cùng kết quả).
+>
+> Caveat: `tenant_subject` chỉ rải **tải engine** (CPU/gRPC). Bộ đếm Redis đã là **per-subject** — key `rl:tenant:rule[:resource][:action][:subject]` — nên với một tenant nhiều subject, các key vốn đã rải khắp cluster; routing không đổi điều đó. Hot-key Redis thật chỉ xảy ra khi hot là **một `(tenant,subject)` đơn** (1 key trên 1 master), và ca đó routing kiểu gì cũng về 1 engine/1 key — chỉ shard key mới cứu.
 
 Hai tín hiệu đếm được mỗi engine xử lý bao nhiêu request:
 - **Log:** mỗi RPC engine ghi 1 dòng `grpc call`.
@@ -375,4 +379,4 @@ Phân phối qua metric `velox_limiter_checks_total` mỗi engine: **engine-1 = 
 - `sum(velox_limiter_checks_total)` truy vấn được trong Prometheus sau ~1 chu kỳ scrape (15s).
 - **Grafana** (`:3000`): dashboard *"Velox — Rate Limiter Overview"* (`uid=velox-overview`) tự nạp qua provisioning; datasource `uid=velox-prometheus`.
 
-> **Lưu ý metric:** `velox_limiter_checks_total` / `..._check_duration_seconds` là `CounterVec`/`HistogramVec` **in-process từng engine** → chỉ xuất hiện series sau request đầu tiên, và **reset về 0 khi engine restart**. Vì `tenant_id` route sticky theo consistent hash, một tenant chỉ làm tăng counter ở đúng engine sở hữu nó. `velox_limiter_redis_errors_total` là counter thường nên luôn hiện (=0 khi không lỗi).
+> **Lưu ý metric:** `velox_limiter_checks_total` / `..._check_duration_seconds` là `CounterVec`/`HistogramVec` **in-process từng engine** → chỉ xuất hiện series sau request đầu tiên, và **reset về 0 khi engine restart**. Với `ROUTE_KEY=tenant` (mặc định), một tenant chỉ làm tăng counter ở đúng engine sở hữu nó; với `ROUTE_KEY=tenant_subject`, counter của tenant đó rải qua nhiều engine. `velox_limiter_redis_errors_total` là counter thường nên luôn hiện (=0 khi không lỗi).

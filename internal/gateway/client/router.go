@@ -85,8 +85,9 @@ func (r *Router) UpdateMembers(addrs []string) {
 	}
 }
 
-// GetClient locates the appropriate engine node for the given tenantID and returns its gRPC client.
-func (r *Router) GetClient(tenantID string) (enginev1.LimiterEngineServiceClient, error) {
+// GetClient locates the engine node responsible for the given routing key
+// (see routingKey) on the consistent-hash ring and returns its gRPC client.
+func (r *Router) GetClient(key string) (enginev1.LimiterEngineServiceClient, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
@@ -94,10 +95,10 @@ func (r *Router) GetClient(tenantID string) (enginev1.LimiterEngineServiceClient
 		return nil, fmt.Errorf("no active limiter-engine nodes available")
 	}
 
-	// Find the node responsible for this tenant
-	node := r.ring.LocateKey([]byte(tenantID))
+	// Find the node responsible for this routing key
+	node := r.ring.LocateKey([]byte(key))
 	if node == nil {
-		return nil, fmt.Errorf("failed to locate node for tenant: %s", tenantID)
+		return nil, fmt.Errorf("failed to locate node for key: %s", key)
 	}
 
 	addr := node.String()

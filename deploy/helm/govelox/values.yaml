@@ -52,6 +52,9 @@ gateway:
   image: govelox/api-gateway
   httpPort: 8080
   metricsPort: 8090
+  # Consistent-hash routing key: "tenant" (sticky per tenant) or "tenant_subject"
+  # (spread a hot tenant across engines). Correct either way — Redis holds state.
+  routeKey: tenant
   # Empty → chart points it at the in-cluster membership Service.
   serviceType: ClusterIP
   resources:
