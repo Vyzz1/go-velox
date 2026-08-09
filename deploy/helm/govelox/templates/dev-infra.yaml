@@ -19,11 +19,22 @@ spec:
       containers:
         - name: redisz
           image: redis:7.0-alpine
-          args: ["redis-server", "--appendonly", "no", "--save", ""]
           ports: [{ containerPort: 6379 }]
+          {{- if .Values.auth.enabled }}
+          env:
+            - name: REDIS_PASSWORD
+              valueFrom: { secretKeyRef: { name: {{ include "govelox.authSecretName" . }}, key: REDIS_PASSWORD } }
+          command: ["sh", "-c"]
+          args: ["exec redis-server --appendonly no --save '' --requirepass \"$REDIS_PASSWORD\""]
+          readinessProbe:
+            exec: { command: ["sh", "-c", "redis-cli -a \"$REDIS_PASSWORD\" ping"] }
+            periodSeconds: 5
+          {{- else }}
+          args: ["redis-server", "--appendonly", "no", "--save", ""]
           readinessProbe:
             exec: { command: ["redis-cli", "ping"] }
             periodSeconds: 5
+          {{- end }}
 ---
 apiVersion: v1
 kind: Service
@@ -57,6 +68,9 @@ spec:
             - --listen-client-urls=http://0.0.0.0:2379
             - --advertise-client-urls=http://0.0.0.0:2379
           ports: [{ containerPort: 2379 }]
+          # devInfra etcd stays no-auth (the etcd image has no shell to enable
+          # RBAC at runtime). etcd auth is exercised via the Bitnami etcd subchart
+          # (values-prod); the engine/config send etcd creds only when it is on.
           readinessProbe:
             exec: { command: ["etcdctl", "endpoint", "health"] }
             initialDelaySeconds: 3

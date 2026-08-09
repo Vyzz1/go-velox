@@ -58,6 +58,17 @@ spec:
             - { name: LIMITER_DEFAULT_PERIOD_SECS, value: {{ .Values.engine.defaults.periodSecs | quote }} }
             - { name: LIMITER_DEFAULT_BURST,       value: {{ .Values.engine.defaults.burst | quote }} }
             - { name: LIMITER_FAIL_MODE,           value: {{ .Values.engine.failMode | quote }} }
+            {{- $sec := include "govelox.authSecretName" . }}
+            {{- if .Values.auth.enabled }}
+            - name: REDIS_PASSWORD
+              valueFrom: { secretKeyRef: { name: {{ $sec }}, key: REDIS_PASSWORD } }
+            {{- end }}
+            {{- if and .Values.auth.enabled .Values.etcd.enabled }}
+            - name: ETCD_USERNAME
+              valueFrom: { secretKeyRef: { name: {{ $sec }}, key: ETCD_USERNAME } }
+            - name: ETCD_PASSWORD
+              valueFrom: { secretKeyRef: { name: {{ $sec }}, key: ETCD_PASSWORD } }
+            {{- end }}
           readinessProbe:
             httpGet: { path: /healthz, port: metrics }
             initialDelaySeconds: 3

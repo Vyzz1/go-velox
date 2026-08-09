@@ -34,7 +34,10 @@ type Config struct {
 	MetricsAddr       string `env:"METRICS_ADDR"                 envDefault:":9091"`
 	OTLPEndpoint      string `env:"OTLP_ENDPOINT"                envDefault:"localhost:4317"`
 	RedisAddrs        string `env:"REDIS_ADDRS"                  envDefault:"localhost:6379"`
+	RedisPassword     string `env:"REDIS_PASSWORD"               envDefault:""`
 	EtcdEndpoints     string `env:"ETCD_ENDPOINTS"               envDefault:"localhost:2379"`
+	EtcdUsername      string `env:"ETCD_USERNAME"                envDefault:""`
+	EtcdPassword      string `env:"ETCD_PASSWORD"                envDefault:""`
 	EtcdPrefix        string `env:"ETCD_PREFIX"                  envDefault:"/velox/rules/"`
 	DefaultLimit      uint64 `env:"LIMITER_DEFAULT_LIMIT"        envDefault:"100"`
 	DefaultPeriodSecs int64  `env:"LIMITER_DEFAULT_PERIOD_SECS"  envDefault:"60"`
@@ -74,7 +77,7 @@ func main() {
 	metricsSrv := metrics.New(cfg.MetricsAddr, log)
 	metricsSrv.Start()
 
-	redisStore, err := store.New(splitTrim(cfg.RedisAddrs))
+	redisStore, err := store.New(splitTrim(cfg.RedisAddrs), cfg.RedisPassword)
 	if err != nil {
 		log.Fatal("redis connection failed", zap.Error(err))
 	}
@@ -89,6 +92,8 @@ func main() {
 	etcdClient, err := clientv3.New(clientv3.Config{
 		Endpoints:   splitTrim(cfg.EtcdEndpoints),
 		DialTimeout: 5 * time.Second,
+		Username:    cfg.EtcdUsername, // empty → no authentication
+		Password:    cfg.EtcdPassword,
 	})
 	if err != nil {
 		log.Fatal("etcd connection failed", zap.Error(err))

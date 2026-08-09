@@ -118,6 +118,19 @@ postgres:
 otlp:
   endpoint: "jaeger:4317"
 
+# ── Backend authentication (Redis password + etcd RBAC) — improvement #4 ──────
+# When enabled, the engine/config clients read credentials from a Secret and the
+# devInfra Redis/etcd turn on auth. For real Bitnami backends, also enable their
+# own auth (redis-cluster.usePassword / etcd.auth.rbac.create — see values-prod).
+# Empty creds = no auth (the default). Bring your own Secret (keys REDIS_PASSWORD,
+# ETCD_USERNAME, ETCD_PASSWORD) via existingSecret instead of the values below.
+auth:
+  enabled: false
+  existingSecret: ""
+  redisPassword: "velox-redis-pass"
+  etcdUsername: "root"
+  etcdPassword: "velox-etcd-pass"
+
 # ── NetworkPolicy (Phase 3 B3) ───────────────────────────────────────────────
 # Per-component ingress allow-lists for the app tier (engine / gateway / config).
 # No namespace-wide default-deny: only the selected app Pods are restricted; the

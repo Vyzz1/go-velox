@@ -30,6 +30,8 @@ type Config struct {
 	OTLPEndpoint  string `env:"OTLP_ENDPOINT"  envDefault:"localhost:4317"`
 	DatabaseURL   string `env:"DATABASE_URL"   envDefault:"postgres://velox:velox@localhost:5432/velox?sslmode=disable"`
 	EtcdEndpoints string `env:"ETCD_ENDPOINTS" envDefault:"localhost:2379"`
+	EtcdUsername  string `env:"ETCD_USERNAME"  envDefault:""`
+	EtcdPassword  string `env:"ETCD_PASSWORD"  envDefault:""`
 	EtcdPrefix    string `env:"ETCD_PREFIX"    envDefault:"/velox/rules/"`
 }
 
@@ -75,6 +77,8 @@ func main() {
 	etcdClient, err := clientv3.New(clientv3.Config{
 		Endpoints:   splitTrim(cfg.EtcdEndpoints),
 		DialTimeout: 5 * time.Second,
+		Username:    cfg.EtcdUsername, // empty → no authentication
+		Password:    cfg.EtcdPassword,
 	})
 	if err != nil {
 		log.Fatal("etcd connection failed", zap.Error(err))

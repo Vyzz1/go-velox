@@ -20,9 +20,11 @@ type Store struct {
 	slidingWinScript *redis.Script
 }
 
-func New(addrs []string) (*Store, error) {
+// New connects to Redis. An empty password means no authentication.
+func New(addrs []string, password string) (*Store, error) {
 	client := redis.NewUniversalClient(&redis.UniversalOptions{
 		Addrs:        addrs,
+		Password:     password,
 		DialTimeout:  2 * time.Second,
 		ReadTimeout:  500 * time.Millisecond,
 		WriteTimeout: 500 * time.Millisecond,

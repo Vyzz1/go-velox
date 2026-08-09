@@ -86,11 +86,21 @@ serviceMonitor:
   additionalLabels:
     release: kube-prometheus-stack   # match your Prometheus serviceMonitorSelector
 
+# Backend auth on. The passwords MUST match the Bitnami server settings below.
+# In real prod use auth.existingSecret + the subcharts' own credential Secrets.
+auth:
+  enabled: true
+  redisPassword: "CHANGE-ME-redis"
+  etcdUsername: "root"
+  etcdPassword: "CHANGE-ME-etcd"
+
 # ── Real data stores (Bitnami subcharts) ─────────────────────────────────────
 # To also lock down the data stores, enable each subchart's own networkPolicy
 # (they know their own Pod labels), e.g. redis-cluster.networkPolicy.enabled=true.
 redis-cluster:
   enabled: true
+  usePassword: true
+  password: "CHANGE-ME-redis"    # must match auth.redisPassword
   persistence:
     enabled: true
     size: 8Gi
@@ -109,6 +119,10 @@ postgresql:
 etcd:
   enabled: true
   replicaCount: 3               # 3-member quorum for HA (demo used 1)
+  auth:
+    rbac:
+      create: true
+      rootPassword: "CHANGE-ME-etcd"   # must match auth.etcdPassword
   persistence:
     enabled: true
     size: 8Gi

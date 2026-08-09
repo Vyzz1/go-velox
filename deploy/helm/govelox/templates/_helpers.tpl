@@ -45,6 +45,11 @@ client, which breaks against a cluster). ClusterClient discovers the rest of the
 {{- end -}}
 {{- end -}}
 
+{{/* Name of the Secret holding backend credentials (existing or chart-created). */}}
+{{- define "govelox.authSecretName" -}}
+{{- .Values.auth.existingSecret | default (printf "%s-auth" (include "govelox.fullname" .)) -}}
+{{- end -}}
+
 {{/* Common metadata labels. */}}
 {{- define "govelox.labels" -}}
 app.kubernetes.io/name: {{ include "govelox.name" . }}
