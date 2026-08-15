@@ -6,38 +6,46 @@
 
 The platform is designed around four services:
 
-- `api-gateway` on `:8080` for external gRPC and REST entry
+- `api-gateway` on `:8080` for external REST entry
 - `limiter-engine` on `:9090` for internal gRPC rate-limit decisions
 - `config-service` on `:8081` for tenant rule management and hot reload
 - `sync-agent` on `:7070/udp` for gossip-based peer discovery
 
 ## Architecture
 
+Requests flow **client → api-gateway → limiter-engine → Redis Cluster**.
+**sync-agent** gossip gives the gateway a live view of the engine fleet, and
+**config-service** pushes rule changes to the engines through etcd (hot reload).
+
 ### `api-gateway`
 
-- entry point for client traffic
-- accepts gRPC and optionally REST
-- forwards requests to internal services
-- should stay thin and avoid owning limiter state
+- REST entry point: `POST /v1/check` → `200` / `429` with `Retry-After` and
+  `X-RateLimit-*` headers
+- routes each request to a limiter-engine replica over a **consistent-hash ring**
+  built from live gossip membership; the routing key is configurable
+  (`ROUTE_KEY=tenant | tenant_subject`)
+- thin — owns no limiter state
 
 ### `limiter-engine`
 
-- core rate-limiting brain
-- evaluates limits using Redis
-- intended to run atomic Lua scripts against Redis Cluster
-- owns rate-limit algorithms and decision logic
+- the rate-limit decision engine (internal gRPC)
+- evaluates **GCRA** and **sliding-window** limits as **atomic Lua scripts** on
+  **Redis Cluster** (counters live in Redis, so engines are stateless)
+- **fail-open / fail-closed** policy when Redis is unreachable
+  (`LIMITER_FAIL_MODE`) — a clean 200/429, never a 5xx
+- rules hot-reload from an etcd watch with no restart
 
 ### `config-service`
 
-- manages per-tenant rules
-- exposes REST endpoints for configuration
-- uses `etcd` for config propagation and hot reload
+- REST CRUD for per-tenant rules
+- **Postgres** is the source of truth; every change mirrors to **etcd** for
+  propagation, and a startup reconcile heals drift
 
 ### `sync-agent`
 
-- handles UDP gossip and peer discovery
-- supports multi-node deployments
-- should focus on membership and topology sync
+- gossip membership + failure detection via **SWIM** (hashicorp/memberlist)
+- runs as a **sidecar** of each engine, advertising the engine's gRPC address and
+  health so the gateway routes only to live engines
 
 ## Local Infra
 
@@ -215,25 +223,25 @@ helm install velox ./deploy/helm/govelox -n velox --create-namespace \
   -f ./deploy/helm/govelox/values-prod.yaml
 ```
 
-## Current Status
+## Status
 
-The repository currently has infra and project conventions in place, but application services may still need to be scaffolded.
+All four services are implemented and wired end-to-end, with unit + integration
+tests and green CI. Highlights:
 
-What is already present:
-
-- `docker-compose.yml`
-- Prometheus config
-- Grafana provisioning
-- `Makefile`
-- `.golangci.yml`
-- `AGENTS.md`
-
-What likely comes next:
-
-- scaffold `cmd/` for the four services
-- add shared `pkg/` and internal business packages
-- define `.proto` contracts
-- wire Redis, Etcd, observability, and config flow into service implementations
+- **Algorithms** — GCRA and sliding-window as atomic Lua on Redis Cluster,
+  tested against an in-process miniredis.
+- **Topology** — gateway consistent-hash routing over a gossip-discovered engine
+  fleet (sync-agent sidecars); tenant-sticky or tenant+subject spreading.
+- **Resilience** — automatic engine failover; fail-open/fail-closed on Redis loss.
+- **Control plane** — config-service (Postgres → etcd) hot-reloads engine rules
+  with no restart.
+- **Security** — optional Redis password + etcd RBAC, credentials sourced from
+  Kubernetes Secrets.
+- **Observability** — structured logs (Zap), Prometheus metrics, OTLP tracing to
+  Jaeger; a provisioned Grafana dashboard.
+- **Deploy** — `docker-compose` for local; raw k8s manifests and an umbrella Helm
+  chart (Secrets, PDBs, NetworkPolicies, Ingress, HPA, ServiceMonitors) for k8s.
+- **CI** — GitHub Actions: build, `go test -race`, golangci-lint, helm lint/template.
 
 ## Notes
 
