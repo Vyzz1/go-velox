@@ -1,5 +1,7 @@
 # go-velox
 
+[![CI](https://github.com/Vyzz1/go-velox/actions/workflows/ci.yml/badge.svg)](https://github.com/Vyzz1/go-velox/actions/workflows/ci.yml)
+
 `go-velox` is a Go-based microservice system for building a `Distributed Rate Limiter as a Service`.
 
 The platform is designed around four services:
