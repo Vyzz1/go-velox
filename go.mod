@@ -3,6 +3,7 @@ module github.com/Vyzz1/go-velox.git
 go 1.26.2
 
 require (
+	github.com/alicebob/miniredis/v2 v2.38.0
 	github.com/buraksezer/consistent v0.10.0
 	github.com/cespare/xxhash/v2 v2.3.0
 	github.com/google/uuid v1.6.0
@@ -50,6 +51,7 @@ require (
 	github.com/prometheus/common v0.66.1 // indirect
 	github.com/prometheus/procfs v0.16.1 // indirect
 	github.com/sean-/seed v0.0.0-20170313163322-e2103e2c3529 // indirect
+	github.com/yuin/gopher-lua v1.1.1 // indirect
 	go.etcd.io/etcd/api/v3 v3.6.12 // indirect
 	go.etcd.io/etcd/client/pkg/v3 v3.6.12 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
