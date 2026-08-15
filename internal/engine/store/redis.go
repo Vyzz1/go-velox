@@ -62,17 +62,15 @@ func (s *Store) Check(ctx context.Context, in domain.CheckInput, p algorithm.Par
 		cost = 1
 	}
 
-	nowMs := time.Now().UnixMilli()
-
 	switch p.Algorithm {
 	case algorithm.SlidingWindow:
-		return s.checkSlidingWindow(ctx, in, p, int64(cost), nowMs)
+		return s.checkSlidingWindow(ctx, in, p, int64(cost))
 	default:
-		return s.checkGCRA(ctx, in, p, int64(cost), nowMs)
+		return s.checkGCRA(ctx, in, p, int64(cost))
 	}
 }
 
-func (s *Store) checkGCRA(ctx context.Context, in domain.CheckInput, p algorithm.Params, cost, nowMs int64) (algorithm.Result, error) {
+func (s *Store) checkGCRA(ctx context.Context, in domain.CheckInput, p algorithm.Params, cost int64) (algorithm.Result, error) {
 	burst := p.Burst
 	if burst < 1 {
 		burst = p.Limit
@@ -83,7 +81,6 @@ func (s *Store) checkGCRA(ctx context.Context, in domain.CheckInput, p algorithm
 		p.Limit,
 		p.Period.Milliseconds(),
 		cost,
-		nowMs,
 		burst,
 	).Int64Slice()
 	if err != nil {
@@ -92,14 +89,13 @@ func (s *Store) checkGCRA(ctx context.Context, in domain.CheckInput, p algorithm
 	return parseResult(raw), nil
 }
 
-func (s *Store) checkSlidingWindow(ctx context.Context, in domain.CheckInput, p algorithm.Params, cost, nowMs int64) (algorithm.Result, error) {
+func (s *Store) checkSlidingWindow(ctx context.Context, in domain.CheckInput, p algorithm.Params, cost int64) (algorithm.Result, error) {
 	// Hash tag ensures the two window sub-keys land on the same cluster slot.
 	key := "{" + buildKey(in) + "}"
 	raw, err := s.slidingWinScript.Run(ctx, s.client, []string{key},
 		p.Limit,
 		p.Period.Milliseconds(),
 		cost,
-		nowMs,
 	).Int64Slice()
 	if err != nil {
 		return algorithm.Result{}, fmt.Errorf("store: sliding window script: %w", err)

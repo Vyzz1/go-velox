@@ -34,14 +34,17 @@ type Result struct {
 
 // Script is the Redis Lua implementation of GCRA.
 //
+// The current time is read from Redis via TIME rather than passed in, so every
+// engine that evaluates a key sees the same clock (the key's master), avoiding
+// cross-engine skew when a tenant is spread over the fleet or fails over.
+//
 // Inputs:
 //
 //	KEYS[1]  — rate-limit key
 //	ARGV[1]  — limit  (uint, requests per period)
 //	ARGV[2]  — period in milliseconds
 //	ARGV[3]  — cost   (uint, this request's weight; ≥1)
-//	ARGV[4]  — now    (int64, current unix time in ms)
-//	ARGV[5]  — burst  (uint, extra capacity; ≥1)
+//	ARGV[4]  — burst  (uint, extra capacity; ≥1)
 //
 // Returns: {allowed(0|1), remaining, reset_at_ms, retry_after_ms}
 const Script = `
@@ -49,8 +52,9 @@ local key        = KEYS[1]
 local limit      = tonumber(ARGV[1])
 local period_ms  = tonumber(ARGV[2])
 local cost       = tonumber(ARGV[3])
-local now_ms     = tonumber(ARGV[4])
-local burst      = tonumber(ARGV[5])
+local burst      = tonumber(ARGV[4])
+local t          = redis.call("TIME")
+local now_ms     = tonumber(t[1]) * 1000 + math.floor(tonumber(t[2]) / 1000)
 
 if burst < 1 then burst = 1 end
 

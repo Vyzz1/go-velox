@@ -13,13 +13,15 @@ package algorithm
 // The script derives two sub-keys internally; the shared hash tag guarantees
 // both land on the same cluster slot.
 //
+// The current time is read from Redis via TIME (not passed in), so every engine
+// evaluating a key sees the same clock — see the GCRA note.
+//
 // Inputs:
 //
 //	KEYS[1]  — base key with hash tag, e.g. "{rl:tenant:rule:resource:action:subject}"
 //	ARGV[1]  — limit  (max requests per window)
 //	ARGV[2]  — window in milliseconds
 //	ARGV[3]  — cost
-//	ARGV[4]  — now (unix ms)
 //
 // Returns: {allowed(0|1), remaining, reset_at_ms, retry_after_ms}
 const SlidingWindowScript = `
@@ -27,7 +29,8 @@ local base      = KEYS[1]
 local limit     = tonumber(ARGV[1])
 local window_ms = tonumber(ARGV[2])
 local cost      = tonumber(ARGV[3])
-local now_ms    = tonumber(ARGV[4])
+local t         = redis.call("TIME")
+local now_ms    = tonumber(t[1]) * 1000 + math.floor(tonumber(t[2]) / 1000)
 
 local curr_win = math.floor(now_ms / window_ms) * window_ms
 local prev_win = curr_win - window_ms
