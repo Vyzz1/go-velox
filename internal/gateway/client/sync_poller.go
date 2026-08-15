@@ -68,7 +68,7 @@ func (p *SyncPoller) poll() {
 		p.log.Error("failed to fetch members from sync-agent", zap.Error(err))
 		return
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		p.log.Error("sync-agent returned non-200 status", zap.Int("status", resp.StatusCode))

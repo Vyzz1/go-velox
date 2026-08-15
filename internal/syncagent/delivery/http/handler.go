@@ -48,7 +48,7 @@ func Router(uc membership, log *zap.Logger) http.Handler {
 }
 
 func membersHandler(uc membership) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
+	return func(w http.ResponseWriter, _ *http.Request) {
 		members := uc.List()
 		out := make([]memberResponse, 0, len(members))
 		for _, m := range members {

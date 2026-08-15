@@ -24,7 +24,7 @@ type Config struct {
 // ShutdownFunc flushes and closes the TracerProvider.
 type ShutdownFunc func(context.Context) error
 
-// Init initialises the global OpenTelemetry TracerProvider and wires the OTLP
+// Init initializes the global OpenTelemetry TracerProvider and wires the OTLP
 // gRPC exporter to the configured collector (Jaeger in this project).
 //
 // Call the returned ShutdownFunc on service exit to flush pending spans.

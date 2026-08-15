@@ -99,7 +99,7 @@ func main() {
 		log.Fatal("gossip init failed", zap.Error(err))
 	}
 
-	// Root context for background loops (join retry + health check); cancelled on
+	// Root context for background loops (join retry + health check); canceled on
 	// shutdown so both stop cleanly.
 	ctx, cancelHealth := context.WithCancel(context.Background())
 	defer cancelHealth()
@@ -185,7 +185,7 @@ func main() {
 }
 
 // joinWithRetry attempts to join the gossip cluster via the seeds, retrying with
-// exponential backoff until at least one seed is contacted or ctx is cancelled.
+// exponential backoff until at least one seed is contacted or ctx is canceled.
 // With no seeds this node is the founder and there is nothing to join. This makes
 // convergence independent of seed-DNS readiness at boot and of Pod start order.
 func joinWithRetry(ctx context.Context, gossip *cluster.Memberlist, seeds []string, log *zap.Logger) {

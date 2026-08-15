@@ -3,6 +3,7 @@ package metrics
 import (
 	"context"
 	"net/http"
+	"time"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.uber.org/zap"
@@ -22,7 +23,7 @@ func New(addr string, log *zap.Logger) *Server {
 		w.WriteHeader(http.StatusOK)
 	})
 	return &Server{
-		srv: &http.Server{Addr: addr, Handler: mux},
+		srv: &http.Server{Addr: addr, Handler: mux, ReadHeaderTimeout: 5 * time.Second},
 		log: log,
 	}
 }

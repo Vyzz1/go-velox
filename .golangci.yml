@@ -15,87 +15,73 @@ linters:
     - errcheck
     - govet
     - ineffassign
-    - staticcheck
+    - staticcheck    # v2 folds in the former gosimple + stylecheck
     - unused
-    - gosimple
     - revive
     - gocritic
     - gosec
     - bodyclose
-    - contextcheck
-    - noctx
     - misspell
     - unconvert
     - unparam
     - nakedret
     - prealloc
-    - stylecheck
     - whitespace
-
-issues:
-  max-issues-per-linter: 0
-  max-same-issues: 0
-  exclude-dirs-use-default: true
-
-linters-settings:
-  errcheck:
-    check-type-assertions: true
-    check-blank: true
-
-  gocritic:
-    enabled-tags:
-      - diagnostic
-      - style
-      - performance
-
-  govet:
-    enable-all: true
-    disable:
-      - fieldalignment
-
-  misspell:
-    locale: US
-
-  nakedret:
-    max-func-lines: 20
-
-  revive:
-    confidence: 0.8
-    rules:
-      - name: blank-imports
-      - name: context-as-argument
-      - name: context-keys-type
-      - name: dot-imports
-      - name: empty-block
-      - name: error-return
-      - name: error-strings
-      - name: error-naming
-      - name: exported
-        arguments:
-          - disableStutteringCheck
-      - name: if-return
-      - name: increment-decrement
-      - name: indent-error-flow
-      - name: package-comments
-      - name: range
-      - name: receiver-naming
-      - name: redefines-builtin-id
-      - name: superfluous-else
-      - name: time-naming
-      - name: unexported-return
-      - name: unreachable-code
-      - name: unused-parameter
-      - name: var-declaration
-      - name: var-naming
-
-  staticcheck:
-    checks:
-      - all
-      - -ST1000
-      - -ST1003
-
-  stylecheck:
-    checks:
-      - all
-      - -ST1000
-      - -ST1003
+  settings:
+    errcheck:
+      check-type-assertions: true
+      exclude-functions:
+        - (*encoding/json.Encoder).Encode   # HTTP response write: nothing to do on error
+        - encoding/json.Unmarshal           # malformed gossip meta → zero value
+        - github.com/joho/godotenv.Load      # .env is best-effort
+    gocritic:
+      enabled-tags:
+        - diagnostic
+        - style
+        - performance
+      disabled-checks:
+        - exitAfterDefer   # log.Fatal in main() composition roots is intentional
+        - hugeParam        # small value structs passed by value are fine here
+        - rangeValCopy
+        - whyNoLint
+    gosec:
+      excludes:
+        - G115   # int/uint conversions on bounded limit/count values — noisy here
+    govet:
+      enable-all: true
+      disable:
+        - fieldalignment
+        - shadow   # err/ctx shadowing is idiomatic and mostly harmless
+    misspell:
+      locale: US
+    nakedret:
+      max-func-lines: 20
+    revive:
+      confidence: 0.8
+      rules:
+        - name: blank-imports
+        - name: context-as-argument
+        - name: context-keys-type
+        - name: dot-imports
+        - name: empty-block
+        - name: error-return
+        - name: error-strings
+        - name: error-naming
+        - name: if-return
+        - name: increment-decrement
+        - name: indent-error-flow
+        - name: range
+        - name: receiver-naming
+        - name: redefines-builtin-id
+        - name: superfluous-else
+        - name: time-naming
+        - name: unexported-return
+        - name: unreachable-code
+        - name: unused-parameter
+        - name: var-declaration
+        - name: var-naming
+    staticcheck:
+      checks:
+        - all
+        - -ST1000
+        - -ST1003

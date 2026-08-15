@@ -31,7 +31,7 @@ func Load(cfg any, envFiles ...string) error {
 }
 
 func parseStruct(v reflect.Value) error {
-	if v.Kind() == reflect.Ptr {
+	if v.Kind() == reflect.Pointer {
 		v = v.Elem()
 	}
 	if v.Kind() != reflect.Struct {
