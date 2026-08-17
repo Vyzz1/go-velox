@@ -242,6 +242,8 @@ tests and green CI. Highlights:
 - **Deploy** — `docker-compose` for local; raw k8s manifests and an umbrella Helm
   chart (Secrets, PDBs, NetworkPolicies, Ingress, HPA, ServiceMonitors) for k8s.
 - **CI** — GitHub Actions: build, `go test -race`, golangci-lint, helm lint/template.
+- **Benchmarks** — hot-path decision latency / throughput against a local Redis;
+  see [`BENCHMARKS.md`](BENCHMARKS.md).
 
 ## Notes
 
