@@ -198,6 +198,22 @@ make dev
 - skips missing services cleanly
 - writes logs to `.tmp/dev/*.log`
 
+### Example (use-case demo)
+
+With a stack running (`make infra-stack`, or the Helm chart with the gateway on
+`:8080` and config-service on `:8081`), walk through the rate-limiter use cases —
+burst, hot reload, per-subject isolation, weighted cost, sliding window, and
+multi-tenant independence:
+
+```bash
+make example
+# or point at custom endpoints:
+go run ./cmd/example -gateway http://localhost:8080 -config http://localhost:8081
+```
+
+It configures rules via config-service, drives traffic through the gateway, and
+prints the outcome of each scenario — a quick end-to-end demo and smoke test.
+
 ## Deployment (Kubernetes)
 
 Beyond `docker-compose` (local dev), the platform ships two Kubernetes paths under

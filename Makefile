@@ -1,6 +1,6 @@
 SHELL := /usr/bin/env bash
 
-.PHONY: help fmt test lint tidy check proto compose-config compose-up compose-down compose-logs compose-ps compose-restart infra-dev infra-stack run-api-gateway run-limiter-engine run-config-service run-sync-agent dev evans
+.PHONY: help fmt test lint tidy check proto compose-config compose-up compose-down compose-logs compose-ps compose-restart infra-dev infra-stack run-api-gateway run-limiter-engine run-config-service run-sync-agent dev evans example
 
 GO ?= go
 GOFMT ?= gofmt
@@ -33,6 +33,7 @@ help:
 	@echo "  make run-limiter-engine  Run cmd/limiter-engine if present"
 	@echo "  make run-config-service  Run cmd/config-service if present"
 	@echo "  make run-sync-agent      Run cmd/sync-agent if present"
+	@echo "  make example             Run the end-to-end use-case demo against a running stack"
 
 fmt:
 	@if ! find . -type f -name '*.go' | grep -q .; then \
@@ -156,3 +157,8 @@ run-sync-agent:
 		exit 1; \
 	fi
 	@$(GO) run ./cmd/sync-agent
+
+# Walk through the rate-limiter use cases against a running stack (gateway +
+# config-service). Override endpoints with GATEWAY_URL / CONFIG_URL.
+example:
+	@$(GO) run ./cmd/example
